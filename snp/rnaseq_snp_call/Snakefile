@@ -1,0 +1,128 @@
+
+
+SAMPLES=[\
+"20210607-RNAseq-1cell-cross-A",
+"20210607-RNAseq-1cell-cross-B",
+"20210607-RNAseq-1cell-cross-C",
+"20210607-RNAseq-1cell-cross-D",
+"20210607-RNAseq-2cell-cross-A",
+"20210607-RNAseq-2cell-cross-B",
+"20210607-RNAseq-2cell-cross-C",
+"20210607-RNAseq-2cell-cross-D",
+"20210607-RNAseq-4cell-cross-A",
+"20210607-RNAseq-4cell-cross-B",
+"20210607-RNAseq-4cell-cross-C",
+"20210607-RNAseq-8cell-cross-A",
+"20210607-RNAseq-8cell-cross-B",
+"20210607-RNAseq-8cell-cross-C",
+"20210607-RNAseq-8cell-cross-D",
+"20210607-RNAseq-GV-A",
+"20210607-RNAseq-GV-B",
+"20210607-RNAseq-GV-C",
+"20210607-RNAseq-GV-D",
+"20210607-RNAseq-MII-A",
+"20210607-RNAseq-MII-B",
+"20210607-RNAseq-MII-C",
+"20210607-RNAseq-MII-D"]
+
+
+#SAMPLES=["other-sample", "sample"]
+
+vcf_file = "/scratch/users/ozadamh/projects/mice_cell_development/mouse-itp/snp/reference_files/cds_of_transcriptomic_variants.vcf.gz"
+
+SNPSCRIPT = "../scripts/count_snps.py"
+
+
+###########################################################################
+import os
+import pandas as pd
+
+assert os.path.isfile(vcf_file)
+assert os.path.isfile(SNPSCRIPT)
+
+###########################################################################
+
+def _get_experiment_name(file_path):
+    return os.path.basename(file_path).split(".")[0]
+
+def _get_single_count(file_path):
+    with open(file_path, "rt") as input_stream:
+        result = int(input_stream.readlines()[0])
+    return result
+
+def merge_counts(count_files, merged_output):
+    counts = dict()
+    
+    for f in count_files:
+        experiment_name         = _get_experiment_name(f)
+        this_count              = _get_single_count(f)
+        counts[experiment_name] = this_count
+        
+    mydf = pd.DataFrame.from_dict(counts, orient='index', columns = ["count"])
+    
+    mydf.to_csv(merged_output)
+
+
+###########################################################################
+###########################################################################
+###########################################################################
+
+rule all:
+  input:
+    snp_calls=["snps/{}.tsv.gz".format(s) for s in SAMPLES ],
+    post_dedup_counts="post_dedup_counts.csv",
+    pre_dedup_counts="pre_dedup_counts.csv"
+
+### Note that for RNA-Seq, this should be NON-deduplicated BAM
+rule intersect_bam_with_vcf:
+  input:
+    bam="bams/{sample}.bam"
+  output:
+    bam="vcf_intersected_bams/{sample}.bam",
+    bai="vcf_intersected_bams/{sample}.bam.bai",
+    count="vcf_intersected_bams/{sample}.count"
+  shell:
+    "bedtools intersect -a {input.bam} -b " + vcf_file + " -wa > {output.bam} && " + \
+    "samtools index {output.bam} && "
+    "samtools view -c {output.bam} > {output.count}"
+
+
+rule umitools_dedup:
+  input:
+    bam="vcf_intersected_bams/{sample}.bam"
+  output:
+    bam="dedup/{sample}.bam",
+    bai="dedup/{sample}.bam.bai",
+    count="dedup/{sample}.count"
+  params:
+    stats="dedup/{sample}.stats",
+    umilog="dedup/{sample}.log"
+  shell:
+    "umi_tools dedup --per-contig --per-gene -I {input.bam} -S {output.bam} --output-stats={params.stats} -L {params.umilog} && " + \
+    "samtools index {output.bam} && " \
+    "samtools view -c {output.bam} > {output.count} "
+
+
+rule snp_call:
+  input:
+    bam="dedup/{sample}.bam"
+  output:
+    snp_calls="snps/{sample}.tsv.gz"
+  shell:
+    "python " + SNPSCRIPT + " --bam {input.bam} --vcf " + vcf_file + " --out {output.snp_calls} "
+
+
+rule merge_pre_dedup_counts:
+  input: expand("vcf_intersected_bams/{sample}.count" , sample=SAMPLES )
+  output:
+    merged_counts="pre_dedup_counts.csv"
+  run:
+    merge_counts(input, output.merged_counts)
+
+
+rule merge_post_dedup_counts:
+  input: expand("dedup/{sample}.count" , sample=SAMPLES )
+  output:
+    merged_counts="post_dedup_counts.csv"
+  run:
+    merge_counts(input, output.merged_counts) 

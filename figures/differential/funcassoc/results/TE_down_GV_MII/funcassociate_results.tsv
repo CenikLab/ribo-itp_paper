@@ -1,0 +1,40 @@
+# species: Mus musculus
+# support: EXP, IMP, ISS, ISM, TAS, IEA, HMP, HEP, IDA, IGI, ISO, IGC, NAS, HGI, IPI, IEP, ISA, RCA, IC, HDA
+# associations retrieved on: 2021-09-21 18:33:37-04
+# gofunc built on: 2018-02-21 10:04:34.764444-05
+# gene associations file: ftp://ftp.geneontology.org/pub/go/gene-associations/gene_association.mgi.gz
+#   revision: 2018-02-02 $
+#   downloaded on: 2018-02-14 09:47:34-05
+# GO DAG files from: http://archive.geneontology.org/latest-full/go_201512-termdb-tables.tar.gz
+#   downloaded on: 2015-12-22 05:43:21-05
+# translation required: yes
+# translation info:
+#   authority: ensembl
+#     synergizer db built on: 2015-11-17 14:24:21.26681-05
+#     synergizer db built from: Ensembl Genes 82 / Metazoa Mart / Plant Mart
+#   namespace: mgi_symbol
+#   coverage: 100.0%
+# size of "genespace": 10727
+# number of attributes: 17443
+# NOTE: these associations have been restricted to the genes included
+# in the user-supplied gene space.
+# NOTE: the last record consists of all the entities in the
+# "genespace" that are not associated with any attribute (for
+# the requested support).
+# Original number of entities in query: 817
+# Number of entities in query: 817
+# Total number of entities: 10727
+# Total number of attributes: 17443
+# Original total number of attributes: 20222
+# Translation required: yes
+# Translation coverage: 0.999517
+# Mode: unordered
+# Number of simulations: 1000
+# Adjusted P-value cutoff: 0.05
+# Over/under: over
+# Evidence codes: EXP, IMP, ISS, ISM, TAS, IEA, HMP, HEP, IDA, IGI, ISO, IGC, NAS, HGI, IPI, IEP, ISA, RCA, IC, HDA
+OVERREPRESENTED ATTRIBUTES
+N	X	LOD	P	P_adj	attrib ID	attrib name
+21	101	0.518032406939424	1.89065196105115e-05	0.041	GO:0000776	kinetochore
+45	299	0.349244866716924	7.2877588740379e-06	0.02	GO:0006397	mRNA processing
+53	359	0.341020574298305	2.03724741215933e-06	0.006	GO:0016071	mRNA metabolic process

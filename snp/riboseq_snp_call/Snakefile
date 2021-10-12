@@ -1,0 +1,107 @@
+
+
+SAMPLES=[\
+"20210301-ITP-MII-25-B",
+"20210301-ITP-MII-50-A",
+"20210301-ITP-MII-50-B",
+"20210318-ITP-MII-50-B",
+"20210513-ITP-1cell-cross-50-A",
+"20210513-ITP-1cell-cross-50-B",
+"20210513-ITP-1cell-cross-50-C",
+"20210513-ITP-1cell-cross-50-D",
+"20210513-ITP-1cell-cross-50-E",
+"20210513-ITP-2cell-cross-50-B",
+"20210513-ITP-2cell-cross-50-C",
+"20210513-ITP-2cell-cross-50-F",
+"20210513-ITP-4cell-cross-50-B",
+"20210513-ITP-4cell-cross-50-C",
+"20210513-ITP-4cell-cross-50-D",
+"20210513-ITP-8cell-cross-50-A",
+"20210513-ITP-8cell-cross-50-B",
+"20210513-ITP-8cell-cross-50-C",
+"20210513-ITP-8cell-cross-50-D",
+"20210614-ITP-GV-50-A",
+"20210614-ITP-GV-50-B",
+"20210614-ITP-GV-50-C",
+"20210614-ITP-GV-50-D",
+"20210614-ITP-GV-50-E",
+"20210614-ITP-GV-50-F",
+"20210614-ITP-MII-50-A",
+"20210614-ITP-MII-50-B",
+"20210614-ITP-MII-50-C",
+"20210614-ITP-MII-50-D",
+"20210614-ITP-MII-50-E",
+"20210614-ITP-MII-50-F"
+]
+
+
+#SAMPLES=["other-sample", "sample"]
+
+vcf_file = "/scratch/users/ozadamh/projects/mice_cell_development/mouse-itp/snp/reference_files/cds_of_transcriptomic_variants.vcf.gz"
+
+SNPSCRIPT = "../scripts/count_snps.py"
+
+
+###########################################################################
+import os
+import pandas as pd
+
+assert os.path.isfile(vcf_file)
+assert os.path.isfile(SNPSCRIPT)
+
+###########################################################################
+
+def _get_experiment_name(file_path):
+    return os.path.basename(file_path).split(".")[0]
+
+def _get_single_count(file_path):
+    with open(file_path, "rt") as input_stream:
+        result = int(input_stream.readlines()[0])
+    return result
+
+def merge_counts(count_files, merged_output):
+    counts = dict()
+    
+    for f in count_files:
+        experiment_name         = _get_experiment_name(f)
+        this_count              = _get_single_count(f)
+        counts[experiment_name] = this_count
+        
+    mydf = pd.DataFrame.from_dict(counts, orient='index', columns = ["count"])
+    
+    mydf.to_csv(merged_output)
+
+
+###########################################################################
+###########################################################################
+###########################################################################
+
+rule all:
+  input:
+    snp_calls=["snps/{}.tsv.gz".format(s) for s in SAMPLES ],
+
+### We use the bams post-deduplication
+rule intersect_bam_with_vcf:
+  input:
+    bam="bams/{sample}.bam"
+  output:
+    bam="vcf_intersected_bams/{sample}.bam",
+    bai="vcf_intersected_bams/{sample}.bam.bai",
+    count="vcf_intersected_bams/{sample}.count"
+  shell:
+    "bedtools intersect -a {input.bam} -b " + vcf_file + " -wa > {output.bam} && " + \
+    "samtools index {output.bam} && "
+    "samtools view -c {output.bam} > {output.count}"
+
+
+
+
+rule snp_call:
+  input:
+    bam="vcf_intersected_bams/{sample}.bam"
+  output:
+    snp_calls="snps/{sample}.tsv.gz"
+  shell:
+    "python " + SNPSCRIPT + " --bam {input.bam} --vcf " + vcf_file + " --out {output.snp_calls} "
+
+

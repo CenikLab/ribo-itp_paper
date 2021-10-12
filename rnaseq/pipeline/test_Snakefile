@@ -1,0 +1,327 @@
+"""
+SAMPLES=[\
+"20210607-RNAseq-1cell-cross-A",
+"20210607-RNAseq-1cell-cross-B",
+"20210607-RNAseq-1cell-cross-C",
+"20210607-RNAseq-1cell-cross-D",
+"20210607-RNAseq-2cell-cross-A",
+"20210607-RNAseq-2cell-cross-B",
+"20210607-RNAseq-2cell-cross-C",
+"20210607-RNAseq-2cell-cross-D",
+"20210607-RNAseq-4cell-cross-A",
+"20210607-RNAseq-4cell-cross-B",
+"20210607-RNAseq-4cell-cross-C",
+"20210607-RNAseq-8cell-cross-A",
+"20210607-RNAseq-8cell-cross-B",
+"20210607-RNAseq-8cell-cross-C",
+"20210607-RNAseq-8cell-cross-D",
+"20210607-RNAseq-GV-A",
+"20210607-RNAseq-GV-B",
+"20210607-RNAseq-GV-C",
+"20210607-RNAseq-GV-D",
+"20210607-RNAseq-MII-A",
+"20210607-RNAseq-MII-B",
+"20210607-RNAseq-MII-C",
+"20210607-RNAseq-MII-D"]
+"""
+
+SAMPLES=["other-sample", "sample"]
+
+filter_reference        = "/scratch/users/ozadamh/projects/mice_cell_development/mouse_itp_reference/filter/mouse_rtRNA"
+transcriptome_reference = "/scratch/users/ozadamh/projects/mice_cell_development/mouse_itp_reference/transcriptome/varnt_masked_and_filtered_mouse_transcriptome"
+
+LEFTSPAN  = 15
+RIGHTSPAN = 35
+
+BT2_STRAND_OPTION = ""
+
+#########################################################################################
+#########################################################################################
+#########################################################################################
+
+import os
+import pandas as pd
+import pysam
+from collections import OrderedDict
+
+########################################################################################
+
+def summarize_cutadapt_logs(log_files, output_file):
+    
+    result_dict = {}
+    
+    for f in log_files:
+        this_file_name = os.path.basename(f)
+        this_sample    = this_file_name.split(".")[0] 
+        
+        with open(f, "rt") as input_stream:
+            contents                 = input_stream.readlines()
+            result_dict[this_sample] = get_cutadapt_stats(contents) 
+
+    result_df = pd.DataFrame.from_dict(result_dict, orient='index',\
+                                       columns=["total", "trimmed"])
+    
+    result_df.to_csv(output_file)
+
+
+    
+def get_cutadapt_stats(cutadapt_log):
+    total_reads   = -1
+    trimmed_reads = -1
+    
+    #lines = cutadapt_log.split("\n")
+    
+    for this_line in cutadapt_log:
+
+        line_contents = this_line.split(":")
+        
+        if len(line_contents) > 1 and \
+            line_contents[0].lower().startswith("total read pairs processed"):
+            
+            total_reads = int(line_contents[1].strip().replace(",","") )
+            
+        
+        if len(line_contents) > 1 and \
+            line_contents[0].lower().startswith("pairs written"):
+
+            trimmed_reads = int( line_contents[1].strip().split()[0].replace(",", "") )
+            continue
+            
+    return (total_reads, trimmed_reads)
+
+
+#########################################################################################
+
+def _read_single_idxstats(stats_file):
+    experiment_name = os.path.basename(stats_file).split(".")[0]
+    count_df = pd.read_csv(stats_file, 
+                            sep       = "\t", 
+                            index_col = 0, 
+                            header    = None, 
+                            usecols   = [0, 2],
+                            names     = ["transcript", experiment_name])
+    
+    return count_df
+    
+
+def _read_csv(stats_file):
+    experiment_name = os.path.basename(stats_file).split(".")[0]
+    count_df = pd.read_csv(stats_file,
+                            sep       = ",",
+                            index_col = 0,
+                            header    = None,
+                            usecols   = [0, 1],
+                            names     = ["transcript", experiment_name])
+
+    return count_df
+
+def merge_csv_files(stats_files, output_csv, read_func):
+    result_df = read_func(stats_files[0])
+    
+    for f in stats_files[1:]:
+        result_df = result_df.merge( read_func(f) , on='transcript')
+        
+    result_df.to_csv(output_csv)
+        
+#######################################################################################
+
+def _get_cds_coord_from_header(header):
+    contents = header.split("|")
+    
+    for c in contents:
+        subcontents = c.split(":")
+        
+        if len(subcontents) < 2:
+            continue
+            
+        if subcontents[0] == "CDS":
+            start, stop = subcontents[1].split("-")
+            return (int(start), int(stop))
+        
+    raise Error("Couldn't find CDS for the entry: " + header)
+
+
+def get_cds_counts(bam_file, output_file, left_span, right_span):
+    """
+    Counts the reads mapping to the modified CDS after removing the junction regions
+    More explicitly, the modified CDS region is defined as follows.
+    In the original CDS, we remove <right_span> many nueclotides to the right of start site
+    and <left_span> nucleotides to the left of stop site.
+    
+    The result is written to a csv file.
+    """
+    
+    counts  = OrderedDict()
+    samfile = pysam.AlignmentFile(bam_file, "rb")
+    
+    for transcript in samfile.references:
+        cds_start, cds_stop = _get_cds_coord_from_header(transcript)
+        
+        # Exclude the nucleotides "around" the start / stop sites
+        # where around is defined by the left and right span
+        adjusted_start = cds_start + right_span
+        adjusted_stop  = cds_stop  - left_span
+        
+        counts[transcript] = samfile.count(contig = transcript, 
+                                           start  = adjusted_start,
+                                           stop   = adjusted_stop)
+        
+    
+    result_df = pd.DataFrame.from_dict(counts, orient='index')
+    result_df.to_csv(output_file, header=False)
+    
+    return(result_df)
+
+
+
+
+#########################################################################################
+#########################################################################################
+#########################################################################################
+
+rule all:
+  input:
+    R1=["umi_extracted/{}_R1.fastq.gz".format(sample) for sample in SAMPLES ],
+    R2=["umi_extracted/{}_R2.fastq.gz".format(sample) for sample in SAMPLES ],
+    cutadapt_out="cutadapt_stats.csv",
+    filteredbam=["filtered/{}.bam".format(sample) for sample in SAMPLES],
+    dedupbam=["dedup/{}.bam".format(sample) for sample in SAMPLES],
+    mapped_bai=["mapping/{}.bam.bai".format(sample) for sample in SAMPLES], 
+    filter_counts="filter_counts.csv",
+    cds_counts="cds_counts.csv",
+    transcript_counts="transcript_counts.csv",
+
+rule trim_adapter:
+  input:
+    R1="raw/{sample}/{sample}_R1.fastq.gz",
+    R2="raw/{sample}/{sample}_R2.fastq.gz"
+
+  output:
+    R1="trimmed/{sample}_R1.fastq.gz",
+    R2="trimmed/{sample}_R2.fastq.gz",
+    L="trimmed/{sample}.log"
+
+  threads: 4
+
+  shell:
+    "cutadapt -j 4 --trimmed-only -m 8  -g ATTGCGCAATG -o {output.R1} -p {output.R2} {input.R1} {input.R2} &> {output.L}"
+
+
+rule umi_extract:
+  input:
+    R1="trimmed/{sample}_R1.fastq.gz",
+    R2="trimmed/{sample}_R2.fastq.gz"
+
+  output:
+    R1="umi_extracted/{sample}_R1.fastq.gz",
+    R2="umi_extracted/{sample}_R2.fastq.gz"
+
+  shell:
+    "umi_tools extract --bc-pattern NNNNNNNN --log=processed.log -I {input.R1} -S {output.R1} --read2-in {input.R2} --read2-out {output.R2} "
+
+
+rule adapter_stats:
+  input: expand("trimmed/{sample}.log", sample=SAMPLES)
+
+  output: "cutadapt_stats.csv"
+
+  run:
+    summarize_cutadapt_logs(input, output[0]) 
+
+
+rule filter_reads:
+  input:
+    reads="umi_extracted/{sample}_R2.fastq.gz",
+    #reference=filter_reference
+  output:
+    bam="filtered/{sample}.bam",
+    bai="filtered/{sample}.bam.bai",
+    mappinglog="filtered/{sample}.log",
+    unaligned="filtered/{sample}.fastq.gz",
+    counts="filtered/{sample}.counts"
+  threads: 8
+  shell:
+    "bowtie2 --threads {threads}  --no-unal " + BT2_STRAND_OPTION  + " -L 15  -x " + filter_reference  +  \
+    " -q {input.reads} --un {output.unaligned}  2>{output.mappinglog} " + \
+    "| samtools view --threads {threads} -bS | samtools sort --threads {threads} > {output.bam} " + \
+    " && samtools index {output.bam} " + \
+    "&& samtools idxstats --threads {threads} {output.bam} > {output.counts}"
+
+rule merge_filter_counts:
+  input: expand("filtered/{sample}.counts", sample=SAMPLES)
+  output:
+    merged_counts="filter_counts.csv"
+  run:
+    merge_csv_files(stats_files=input, output_csv=output.merged_counts, read_func= _read_single_idxstats)
+
+rule map_reads:
+  input:
+    reads="filtered/{sample}.fastq.gz"
+  output:
+    bam="mapping/{sample}.bam",
+    bai="mapping/{sample}.bam.bai", 
+    unaligned="mapping/{sample}_unal.fastq.gz",
+    mappinglog="mapping/{sample}.log",
+    count="mapping/{sample}.count"
+  threads: 8
+  shell:
+    "bowtie2 --threads {threads}  --no-unal " + BT2_STRAND_OPTION + "  -L 15  -x " + transcriptome_reference + \
+    " -q {input.reads} --un {output.unaligned}  2>{output.mappinglog} " + \
+    "| samtools view --threads {threads} -q 2 -bS | samtools sort --threads {threads} > {output.bam}  " + \
+    "&& samtools view -c {output.bam} > {output.count}" + \
+    "&& samtools index {output.bam}"
+
+rule dedup_reads:
+  input:
+    bam="mapping/{sample}.bam"
+  output:
+    bam="dedup/{sample}.bam",
+    bai="dedup/{sample}.bam.bai",
+    umilog="dedup/{sample}.log",
+  params:
+    stats="dedup/{sample}.stats",
+  shell:
+    "umi_tools dedup --per-contig --per-gene -I {input.bam} -S {output.bam} --output-stats={params.stats} -L {output.umilog} " + \
+    "&& samtools index {output.bam}"
+    
+
+rule count_cds:
+  input:
+    bam="dedup/{sample}.bam"
+  output:
+    counts="cds_counts/{sample}.csv"
+  threads: 1
+  run:
+    get_cds_counts(bam_file    = input.bam, 
+                   output_file = output.counts, 
+                   left_span   = LEFTSPAN, 
+                   right_span  = RIGHTSPAN )
+
+
+rule merge_cds_counts:
+  input: expand("cds_counts/{sample}.csv" , sample=SAMPLES)
+  output:
+    merged_counts = "cds_counts.csv"
+  run:
+    merge_csv_files( stats_files = input, 
+                     output_csv  = output.merged_counts, 
+                     read_func   = _read_csv)
+
+rule count_transcripts:
+  input:
+    bam="dedup/{sample}.bam"
+  output:
+    counts="transcript_counts/{sample}.csv"
+  threads: 4
+  shell:
+    "samtools idxstats --threads {threads} {input.bam} > {output.counts} "
+
+rule merge_transcript_counts:
+  input: expand("transcript_counts/{sample}.csv" , sample=SAMPLES)
+  output:
+    merged_counts = "transcript_counts.csv"
+  run:
+    merge_csv_files(stats_files = input, 
+                    output_csv  = output.merged_counts, 
+                    read_func   = _read_single_idxstats)
+

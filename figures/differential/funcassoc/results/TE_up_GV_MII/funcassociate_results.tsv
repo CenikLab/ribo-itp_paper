@@ -1,0 +1,100 @@
+# species: Mus musculus
+# support: EXP, IMP, ISS, ISM, TAS, IEA, HMP, HEP, IDA, IGI, ISO, IGC, NAS, HGI, IPI, IEP, ISA, RCA, IC, HDA
+# associations retrieved on: 2021-09-21 20:13:32-04
+# gofunc built on: 2018-02-21 10:04:34.764444-05
+# gene associations file: ftp://ftp.geneontology.org/pub/go/gene-associations/gene_association.mgi.gz
+#   revision: 2018-02-02 $
+#   downloaded on: 2018-02-14 09:47:34-05
+# GO DAG files from: http://archive.geneontology.org/latest-full/go_201512-termdb-tables.tar.gz
+#   downloaded on: 2015-12-22 05:43:21-05
+# translation required: yes
+# translation info:
+#   authority: ensembl
+#     synergizer db built on: 2015-11-17 14:24:21.26681-05
+#     synergizer db built from: Ensembl Genes 82 / Metazoa Mart / Plant Mart
+#   namespace: mgi_symbol
+#   coverage: 100.0%
+# size of "genespace": 10727
+# number of attributes: 17443
+# NOTE: these associations have been restricted to the genes included
+# in the user-supplied gene space.
+# NOTE: the last record consists of all the entities in the
+# "genespace" that are not associated with any attribute (for
+# the requested support).
+# Original number of entities in query: 642
+# Number of entities in query: 634
+# Total number of entities: 10727
+# Total number of attributes: 17443
+# Original total number of attributes: 20222
+# Translation required: yes
+# Translation coverage: 0.999517
+# Mode: unordered
+# Number of simulations: 1000
+# Adjusted P-value cutoff: 0.05
+# Over/under: over
+# Evidence codes: EXP, IMP, ISS, ISM, TAS, IEA, HMP, HEP, IDA, IGI, ISO, IGC, NAS, HGI, IPI, IEP, ISA, RCA, IC, HDA
+OVERREPRESENTED ATTRIBUTES
+N	X	LOD	P	P_adj	attrib ID	attrib name
+12	43	0.807165996826607	4.61215858588677e-06	0.009	GO:0051082	unfolded protein binding
+35	136	0.765647280303137	5.34854116254165e-14	<0.001	GO:0043209	myelin sheath
+18	88	0.630068925192134	2.9858138069856e-06	0.006	GO:0006457	protein folding
+32	240	0.407818890864933	1.23490252687336e-05	0.032	GO:0051640	organelle localization
+59	509	0.34501152726483	4.00082190350258e-07	<0.001	GO:0019904	protein domain specific binding
+72	654	0.32316856233218	1.53786017972027e-07	<0.001	GO:0044702	single organism reproductive process
+59	539	0.315659776397923	2.66452077123992e-06	0.006	GO:0022402	cell cycle process
+73	679	0.311258562187663	3.20720161422775e-07	<0.001	GO:0051641	cellular localization
+75	699	0.3109414664377	2.35482435742058e-07	<0.001	GO:0022414	reproductive process
+64	596	0.307510483140645	1.8961192857839e-06	0.004	GO:1902582	single-organism intracellular transport
+71	710	0.273210138785579	6.66376724272876e-06	0.012	GO:0046907	intracellular transport
+72	724	0.270675961250327	6.93775928276968e-06	0.012	GO:0003723	RNA binding
+89	920	0.261894247823398	1.63381870895215e-06	0.004	GO:0050790	regulation of catalytic activity
+80	823	0.261448191580131	4.89761764075879e-06	0.009	GO:0033043	regulation of organelle organization
+127	1354	0.258804855794286	3.61668013583177e-08	<0.001	GO:0032268	regulation of cellular protein metabolic process
+128	1367	0.25824118914405	3.48325155819587e-08	<0.001	GO:0000166	nucleotide binding
+128	1367	0.25824118914405	3.48325155819587e-08	<0.001	GO:1901265	nucleoside phosphate binding
+81	839	0.258221981686592	5.51480374599574e-06	0.009	GO:0071822	protein complex subunit organization
+135	1470	0.250189644598	4.38040334183433e-08	<0.001	GO:0051246	regulation of protein metabolic process
+522	7822	0.249729842732706	6.91137467651464e-09	<0.001	GO:0044424	intracellular part
+476	6853	0.243517308277715	3.51635794338094e-10	<0.001	GO:0005488	binding
+118	1292	0.24113551320958	5.25610465681895e-07	<0.001	GO:0043933	macromolecular complex subunit organization
+94	1015	0.240628491092827	5.27962094865723e-06	0.009	GO:0030554	adenyl nucleotide binding
+138	1532	0.240606294415381	9.80627817562628e-08	<0.001	GO:0036094	small molecule binding
+99	1079	0.237301205487629	4.27873727577325e-06	0.009	GO:1902589	single-organism organelle organization
+93	1011	0.236763728822835	7.89455135468819e-06	0.015	GO:0032559	adenyl ribonucleotide binding
+91	991	0.235218708896374	1.07672587699288e-05	0.019	GO:0005524	ATP binding
+300	3766	0.234906886105257	4.68403048175492e-11	<0.001	GO:0005737	cytoplasm
+131	1464	0.234462151868744	3.3714371628718e-07	<0.001	GO:0006996	organelle organization
+109	1202	0.234289247678579	2.2241929462088e-06	0.006	GO:0001882	nucleoside binding
+110	1215	0.233745261336067	2.13775172927214e-06	0.006	GO:0017076	purine nucleotide binding
+122	1358	0.233559259280658	7.76714900307082e-07	0.001	GO:0019899	enzyme binding
+108	1193	0.233054017754505	2.71013834529096e-06	0.006	GO:0032550	purine ribonucleoside binding
+108	1195	0.232158150390944	2.93204402098362e-06	0.006	GO:0001883	purine nucleoside binding
+108	1196	0.231710759846552	3.04932060021237e-06	0.007	GO:0032549	ribonucleoside binding
+171	1972	0.231265599631206	2.54446837818054e-08	<0.001	GO:0005829	cytosol
+109	1209	0.231180090916377	2.92939865022234e-06	0.006	GO:0032555	purine ribonucleotide binding
+107	1186	0.230904996676387	3.56839581723199e-06	0.007	GO:0035639	purine ribonucleoside triphosphate binding
+109	1218	0.227208005265568	4.14826578231105e-06	0.008	GO:0032553	ribonucleotide binding
+366	4894	0.224679503949782	1.9822250066091e-10	<0.001	GO:0005515	protein binding
+110	1239	0.22325662179131	5.38425717324762e-06	0.009	GO:0065009	regulation of molecular function
+261	3242	0.222768552773245	1.05894892817648e-09	<0.001	GO:0032991	macromolecular complex
+133	1535	0.217402192920543	1.64218368970353e-06	0.004	GO:0051128	regulation of cellular component organization
+518	7906	0.212114095973691	6.70188964375395e-07	0.001	GO:0003674	molecular_function
+177	2122	0.210853693732562	2.23481456384124e-07	<0.001	GO:0043228	non-membrane-bounded organelle
+177	2122	0.210853693732562	2.23481456384124e-07	<0.001	GO:0043232	intracellular non-membrane-bounded organelle
+244	3075	0.205727404682159	2.52062408356302e-08	<0.001	GO:1901363	heterocyclic compound binding
+536	8343	0.202792708618823	7.36287779675782e-06	0.013	GO:0008150	biological_process
+245	3105	0.202450568147598	3.92978396429277e-08	<0.001	GO:0097159	organic cyclic compound binding
+216	2702	0.199415935822066	1.61745008041773e-07	<0.001	GO:0043234	protein complex
+535	8348	0.196120854510728	1.34596094824438e-05	0.034	GO:0044464	cell part
+219	2786	0.189946110156069	4.98912638195713e-07	<0.001	GO:0071840	cellular component organization or biogenesis
+214	2716	0.189614806599925	6.16961114131633e-07	<0.001	GO:0016043	cellular component organization
+235	3077	0.177201505762902	1.57469086286743e-06	0.003	GO:0080090	regulation of primary metabolic process
+236	3099	0.175673962344939	1.8600543278648e-06	0.004	GO:0060255	regulation of macromolecule metabolic process
+192	2492	0.168427760951565	1.50804918556543e-05	0.05	GO:0048523	negative regulation of cellular process
+203	2651	0.168089397800163	1.11742922977507e-05	0.02	GO:0048519	negative regulation of biological process
+254	3413	0.166729918359942	3.84557970566214e-06	0.007	GO:0019222	regulation of metabolic process
+234	3117	0.165585752068258	6.66683246230068e-06	0.012	GO:0031323	regulation of cellular metabolic process
+229	3054	0.163141314466325	9.93913456879714e-06	0.016	GO:0048518	positive regulation of biological process
+213	2819	0.162879406534611	1.50927013408614e-05	0.05	GO:0048522	positive regulation of cellular process
+444	6677	0.159888378271541	1.41615500504598e-05	0.044	GO:0043229	intracellular organelle
+343	4893	0.157013115461782	6.14688488503286e-06	0.012	GO:0044444	cytoplasmic part

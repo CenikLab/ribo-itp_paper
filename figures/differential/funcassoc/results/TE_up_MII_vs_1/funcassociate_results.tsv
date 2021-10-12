@@ -1,0 +1,52 @@
+# species: Mus musculus
+# support: EXP, IMP, ISS, ISM, TAS, IEA, HMP, HEP, IDA, IGI, ISO, IGC, NAS, HGI, IPI, IEP, ISA, RCA, IC, HDA
+# associations retrieved on: 2021-09-21 13:58:58-04
+# gofunc built on: 2018-02-21 10:04:34.764444-05
+# gene associations file: ftp://ftp.geneontology.org/pub/go/gene-associations/gene_association.mgi.gz
+#   revision: 2018-02-02 $
+#   downloaded on: 2018-02-14 09:47:34-05
+# GO DAG files from: http://archive.geneontology.org/latest-full/go_201512-termdb-tables.tar.gz
+#   downloaded on: 2015-12-22 05:43:21-05
+# translation required: yes
+# translation info:
+#   authority: ensembl
+#     synergizer db built on: 2015-11-17 14:24:21.26681-05
+#     synergizer db built from: Ensembl Genes 82 / Metazoa Mart / Plant Mart
+#   namespace: mgi_symbol
+#   coverage: 100.0%
+# size of "genespace": 6330
+# number of attributes: 14778
+# NOTE: these associations have been restricted to the genes included
+# in the user-supplied gene space.
+# NOTE: the last record consists of all the entities in the
+# "genespace" that are not associated with any attribute (for
+# the requested support).
+# Original number of entities in query: 129
+# Number of entities in query: 129
+# Total number of entities: 6330
+# Total number of attributes: 14778
+# Original total number of attributes: 20222
+# Translation required: yes
+# Translation coverage: 0.999517
+# Mode: unordered
+# Number of simulations: 1000
+# Adjusted P-value cutoff: 0.01
+# Over/under: over
+# Evidence codes: EXP, IMP, ISS, ISM, TAS, IEA, HMP, HEP, IDA, IGI, ISO, IGC, NAS, HGI, IPI, IEP, ISA, RCA, IC, HDA
+OVERREPRESENTED ATTRIBUTES
+N	X	LOD	P	P_adj	attrib ID	attrib name
+7	31	1.18857184440073	2.17006208934188e-06	0.006	GO:0030856	regulation of epithelial cell differentiation
+13	108	0.869796832984303	2.26808834061234e-07	<0.001	GO:0031965	nuclear membrane
+25	332	0.670025741910383	8.5323893023069e-09	<0.001	GO:0007010	cytoskeleton organization
+17	222	0.656971538043564	2.15004621089405e-06	0.006	GO:0016477	cell migration
+18	240	0.649231715924489	1.41919462803428e-06	0.003	GO:0048870	cell motility
+18	260	0.610394942191596	4.47730425116949e-06	0.009	GO:0040011	locomotion
+39	779	0.507735391553655	3.86861569658397e-08	<0.001	GO:1902589	single-organism organelle organization
+40	812	0.50249333726566	3.80728412531879e-08	<0.001	GO:0050793	regulation of developmental process
+47	1043	0.478224808851729	2.49015406695152e-08	<0.001	GO:0006996	organelle organization
+28	559	0.476496903677723	5.34199714617889e-06	0.009	GO:0033554	cellular response to stress
+41	928	0.448398875675994	5.14332923812131e-07	0.001	GO:0051716	cellular response to stimulus
+64	1799	0.403861134960878	2.27121800225077e-07	<0.001	GO:0016043	cellular component organization
+64	1855	0.384589428555214	7.6135590212501e-07	0.001	GO:0071840	cellular component organization or biogenesis
+50	1353	0.37787632634275	4.28975181352118e-06	0.009	GO:0050896	response to stimulus
+90	3150	0.371396163795495	2.59901423529827e-06	0.008	GO:0005515	protein binding

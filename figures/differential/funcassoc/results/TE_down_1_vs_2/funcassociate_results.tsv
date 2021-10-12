@@ -1,0 +1,96 @@
+# species: Mus musculus
+# support: EXP, IMP, ISS, ISM, TAS, IEA, HMP, HEP, IDA, IGI, ISO, IGC, NAS, HGI, IPI, IEP, ISA, RCA, IC, HDA
+# associations retrieved on: 2021-09-21 14:25:34-04
+# gofunc built on: 2018-02-21 10:04:34.764444-05
+# gene associations file: ftp://ftp.geneontology.org/pub/go/gene-associations/gene_association.mgi.gz
+#   revision: 2018-02-02 $
+#   downloaded on: 2018-02-14 09:47:34-05
+# GO DAG files from: http://archive.geneontology.org/latest-full/go_201512-termdb-tables.tar.gz
+#   downloaded on: 2015-12-22 05:43:21-05
+# translation required: yes
+# translation info:
+#   authority: ensembl
+#     synergizer db built on: 2015-11-17 14:24:21.26681-05
+#     synergizer db built from: Ensembl Genes 82 / Metazoa Mart / Plant Mart
+#   namespace: mgi_symbol
+#   coverage: 100.0%
+# size of "genespace": 7907
+# number of attributes: 15867
+# NOTE: these associations have been restricted to the genes included
+# in the user-supplied gene space.
+# NOTE: the last record consists of all the entities in the
+# "genespace" that are not associated with any attribute (for
+# the requested support).
+# Original number of entities in query: 288
+# Number of entities in query: 288
+# Total number of entities: 7907
+# Total number of attributes: 15867
+# Original total number of attributes: 20222
+# Translation required: yes
+# Translation coverage: 0.999517
+# Mode: unordered
+# Number of simulations: 1000
+# Adjusted P-value cutoff: 0.01
+# Over/under: over
+# Evidence codes: EXP, IMP, ISS, ISM, TAS, IEA, HMP, HEP, IDA, IGI, ISO, IGC, NAS, HGI, IPI, IEP, ISA, RCA, IC, HDA
+OVERREPRESENTED ATTRIBUTES
+N	X	LOD	P	P_adj	attrib ID	attrib name
+23	204	0.559612074828908	1.25040850459095e-06	0.002	GO:0008380	RNA splicing
+26	266	0.491028422565852	3.8267339282456e-06	0.008	GO:0006397	mRNA processing
+56	639	0.466941322214916	3.10878821480337e-10	<0.001	GO:0003723	RNA binding
+39	451	0.441887243841353	3.21345703581045e-07	<0.001	GO:0006396	RNA processing
+42	511	0.419272820817656	4.33339279812173e-07	<0.001	GO:1990904	ribonucleoprotein complex
+109	1554	0.415933365217949	2.20537611021944e-13	<0.001	GO:0003676	nucleic acid binding
+41	509	0.408160441194525	1.02962056335617e-06	0.001	GO:0030529	intracellular ribonucleoprotein complex
+171	2996	0.393874269100883	4.54092594671797e-14	<0.001	GO:0005634	nucleus
+260	6261	0.391815760930947	2.46279323305246e-07	<0.001	GO:0008150	biological_process
+50	659	0.38657827843198	3.58218403791879e-07	<0.001	GO:0044451	nucleoplasm part
+50	664	0.382720244927944	4.51518327802411e-07	<0.001	GO:2000113	negative regulation of cellular macromolecule biosynthetic process
+261	6341	0.381579399801241	7.54188158490398e-07	0.001	GO:0044464	cell part
+99	1470	0.378793828659822	6.43534455363835e-11	<0.001	GO:0016070	RNA metabolic process
+254	6012	0.377422360980828	9.74082762135023e-08	<0.001	GO:0044424	intracellular part
+236	5229	0.374644192594652	9.73955138359592e-10	<0.001	GO:0005488	binding
+145	2448	0.369248693876279	2.25320784021066e-12	<0.001	GO:0097159	organic cyclic compound binding
+50	682	0.369064285789153	1.01257358271155e-06	0.001	GO:0010558	negative regulation of macromolecule biosynthetic process
+144	2427	0.368655497819277	2.5549969388094e-12	<0.001	GO:1901363	heterocyclic compound binding
+112	1758	0.36407494570458	6.02628062036626e-11	<0.001	GO:0090304	nucleic acid metabolic process
+251	5921	0.362808606410471	1.34731443385562e-07	<0.001	GO:0003674	molecular_function
+235	5252	0.358540486466737	4.24034586710309e-09	<0.001	GO:0009987	cellular process
+50	697	0.357951744927327	1.92702841932665e-06	0.007	GO:0031327	negative regulation of cellular biosynthetic process
+52	741	0.348558455679934	2.23941701389496e-06	0.007	GO:0010629	negative regulation of gene expression
+50	714	0.345636364415264	3.87423800119797e-06	0.008	GO:0009890	negative regulation of biosynthetic process
+52	751	0.341677912486531	3.33724333315036e-06	0.008	GO:0051172	negative regulation of nitrogen compound metabolic process
+110	1802	0.336066942865961	1.48466498945434e-09	<0.001	GO:0010468	regulation of gene expression
+116	1945	0.329920478079581	1.64042235796009e-09	<0.001	GO:0006139	nucleobase-containing compound metabolic process
+67	1020	0.328507228336464	6.26043501375957e-07	<0.001	GO:0032774	RNA biosynthetic process
+66	1008	0.325824167801734	8.76530746169286e-07	0.001	GO:0006351	transcription, DNA-templated
+66	1009	0.325298578823408	9.08607797393659e-07	0.001	GO:0097659	nucleic acid-templated transcription
+117	1990	0.322523455837908	3.27353902262026e-09	<0.001	GO:0006725	cellular aromatic compound metabolic process
+117	1994	0.321294800419823	3.71736827002174e-09	<0.001	GO:0046483	heterocycle metabolic process
+138	2470	0.319342001435166	1.28182411393262e-09	<0.001	GO:0060255	regulation of macromolecule metabolic process
+119	2053	0.316398132556291	5.30724701504797e-09	<0.001	GO:1901360	organic cyclic compound metabolic process
+109	1846	0.314986788847707	1.34448978334301e-08	<0.001	GO:0051171	regulation of nitrogen compound metabolic process
+100	1693	0.304567800302304	7.90770252753134e-08	<0.001	GO:0010556	regulation of macromolecule biosynthetic process
+91	1517	0.303518360041257	2.07086589324885e-07	<0.001	GO:0051252	regulation of RNA metabolic process
+98	1661	0.301665086464644	1.22911802245036e-07	<0.001	GO:2000112	regulation of cellular macromolecule biosynthetic process
+70	1129	0.300573654465931	2.82645650871561e-06	0.008	GO:0034654	nucleobase-containing compound biosynthetic process
+123	2201	0.298746268212598	2.46305239635958e-08	<0.001	GO:0034641	cellular nitrogen compound metabolic process
+71	1153	0.297830577360352	3.01038676165906e-06	0.008	GO:0019438	aromatic compound biosynthetic process
+102	1758	0.296354812618919	1.38076722033091e-07	<0.001	GO:0009889	regulation of biosynthetic process
+99	1698	0.29586218275171	1.86509706975123e-07	<0.001	GO:0019219	regulation of nucleobase-containing compound metabolic process
+124	2235	0.29544571715301	3.23651485321982e-08	<0.001	GO:0044428	nuclear part
+144	2713	0.293485753422578	1.73955039182389e-08	<0.001	GO:0019222	regulation of metabolic process
+100	1730	0.291924473322739	2.40975795730146e-07	<0.001	GO:0031326	regulation of cellular biosynthetic process
+85	1432	0.291313597294806	1.01662554390929e-06	0.001	GO:2001141	regulation of RNA biosynthetic process
+226	5192	0.28695684116243	9.40287284818158e-07	0.001	GO:0043229	intracellular organelle
+132	2451	0.286623998381427	5.31658054313638e-08	<0.001	GO:0080090	regulation of primary metabolic process
+125	2291	0.286042592921914	7.75519968818965e-08	<0.001	GO:0006807	nitrogen compound metabolic process
+84	1426	0.286035823619699	1.6799774562408e-06	0.003	GO:1903506	regulation of nucleic acid-templated transcription
+83	1424	0.279139870851897	3.09117467938164e-06	0.008	GO:0006355	regulation of transcription, DNA-templated
+226	5227	0.278140494101034	2.0070780108945e-06	0.007	GO:0043226	organelle
+210	4687	0.274622135263361	6.20583614147997e-07	<0.001	GO:0043231	intracellular membrane-bounded organelle
+210	4692	0.273445879681309	6.92153673732387e-07	<0.001	GO:0043227	membrane-bounded organelle
+131	2478	0.273056182173533	2.09049783738182e-07	<0.001	GO:0031323	regulation of cellular metabolic process
+136	2634	0.263580630968433	4.35232346331785e-07	<0.001	GO:0032991	macromolecular complex
+142	2819	0.254194438136217	9.04044971432899e-07	0.001	GO:0044260	cellular macromolecule metabolic process
+178	3796	0.251970186694987	1.14507292991278e-06	0.001	GO:0005515	protein binding
