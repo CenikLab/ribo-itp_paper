@@ -23,7 +23,7 @@ Ribosome profiling data were processed using a modified version of [RiboFlow](ht
 This modified version of RiboFlow can handle ribosome profiling libraries with unique molecular identifiers (UMIs). 
 We also provide parameter files for each RiboFlow run.
 
-RNA-Seq data were **NOT** processed via RiboFlow. We used a custom pipeline to process RNA-Seq files whcih is available in this repository (see below).
+RNA-Seq data were **NOT** processed via RiboFlow. We used a custom pipeline to process RNA-Seq files which is available in this repository (see below).
 
 We recommend running RiboFlow in a [conda](https://conda.io/projects/conda/en/latest/) environment. 
 [Umi-tools](https://umi-tools.readthedocs.io/en/latest/) is needed to process ribosome profiling data.
