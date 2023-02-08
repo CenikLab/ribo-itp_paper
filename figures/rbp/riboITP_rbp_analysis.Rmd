@@ -1,0 +1,1579 @@
+---
+title: "Ribo-ITP RBP analysis"
+author: "Ian Hoskins"
+date: "12/30/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+
+```{r Setup}
+
+# install.packages("data.table")
+library(data.table)
+library(ggplot2)
+library(ggrepel)
+library(viridis)
+library(ggsci)
+library(cowplot)
+library(MatchIt)
+library(harmonicmeanp)
+
+# Bioconductor packages
+# BiocManager::install("Biostrings")
+library(Biostrings)
+
+UTR5_L = "UTR5"
+CDS_L = "CDS"
+UTR3_L = "UTR3"
+UTR5_CDS_L = "UTR5_CDS"
+CDS_UTR3_L = "CDS_UTR3"
+
+REGION_RGB = list("UTR5"=c(4,82,117), "CDS"=c(124,203,162), "UTR3"=c(240,116,110), 
+                  "UTR5_CDS"=c(8,144,153), "CDS_UTR3"=c(252,222,156))
+UTR5_COL = rgb(REGION_RGB[["UTR5"]][1], REGION_RGB[["UTR5"]][2], REGION_RGB[["UTR5"]][3], maxColorValue=255)
+CDS_COL = rgb(REGION_RGB[["CDS"]][1], REGION_RGB[["CDS"]][2], REGION_RGB[["CDS"]][3], maxColorValue=255)
+UTR3_COL = rgb(REGION_RGB[["UTR3"]][1], REGION_RGB[["UTR3"]][2], REGION_RGB[["UTR3"]][3], maxColorValue=255)
+
+UTR5_CDS_COL = rgb(REGION_RGB[["UTR5_CDS_L"]][1], REGION_RGB[["UTR5_CDS_L"]][2], REGION_RGB[["UTR5_CDS_L"]][3], maxColorValue=255)
+CDS_UTR3_COL = rgb(REGION_RGB[["CDS_UTR3_L"]][1], REGION_RGB[["CDS_UTR3_L"]][2], REGION_RGB[["CDS_UTR3"]][3], maxColorValue=255)
+
+REGION_COLS = c("UTR5"=UTR5_COL, "CDS"=CDS_COL, "UTR3"=UTR3_COL, "UTR5_CDS"=UTR5_CDS_COL, "CDS_UTR3"=CDS_UTR3_COL)
+
+ribo_itp_dir<- "~/Documents/Cenik_lab/Experiments/RiboITP_RBP_analysis"
+ref_dir<- "~/reference_files"
+mouse_ornament_dir<- "~/oRNAment_db"
+mouse_ornament_counts_dir<- paste(mouse_ornament_dir, "oRNAment_RBP_counts_by_trx", sep="/")
+mouse_oRNAment_RBP_pwms_dir<- "~/oRNAment_db/PWMs" 
+
+deseq_res_dir<- "~/data_staging/RiboITP_paper/deseq2"
+kozak_dir<- "~/data_staging/RiboITP_paper/kozak"
+ornament_rbp_dir<- "~/data_staging/RiboITP_paper/oRNAment_rbp"
+
+ornament_db_header<- c("ensembl_gene_id", "ensembl_transcript_id", "gene_biotype", "transcript_biotype", 
+                       "transcript_position", "RBP", "score", "unpaired_probability", 
+                       "chromosome", "region", "exon_start", "exon_end")
+
+ornament_ids_header<- c("ensembl_transcript_id", "ensembl_gene_id", "external_gene_name", 
+                        "ensembl_transcript_id_INT", "ensembl_gene_id_INT")
+
+ornament_rbp_ids_header<- c("RBP", "RBP_name")
+oRNAment_RBP_ids_file<- paste(mouse_ornament_dir, "RBP_id_encoding.csv", sep="/")
+
+oRNAment_trx_ids_encoding_file<- paste(mouse_ornament_dir, "Mus_musculus_string_to_int_ID_conversion.csv", sep="/")
+oRNAment_trx_ids_encoding_header<- c("Transcript_ID", "Gene_ID", "Gene", "ensembl_transcript_id_INT", "ensembl_gene_id_INT")
+
+mouse_trx_region_bed_file<- paste(ref_dir, "appris_mouse_v2_filtered_regions.bed", sep="/")
+mouse_trx_region_lengths_file<- paste(ref_dir, "appris_mouse_v2_filtered_transcript_lengths.tsv", sep="/")
+appris_mouse_v2_filtered_regions_utr5_fa<- paste(ref_dir, "appris_mouse_v2_filtered_regions_UTR5.fa", sep="/")
+appris_mouse_v2_filtered_regions_cds_fa<- paste(ref_dir, "appris_mouse_v2_filtered_regions_CDS.fa", sep="/")
+appris_mouse_v2_filtered_regions_utr3_fa<- paste(ref_dir, "appris_mouse_v2_filtered_regions_UTR3.fa", sep="/")
+appris_mouse_v2_filtered_regions_kozak_fa<- paste(ref_dir, "appris_mouse_v2_filtered_regions_UTR3.fa", sep="/")
+
+
+# Define TE genesets for oRNAment db record extraction
+TE_up_GV_vs_MII_genes<- paste(ornament_rbp_dir, "TE_up_GV_vs_MII_genes.txt", sep="/")
+TE_up_MII_vs_1_genes<- paste(ornament_rbp_dir, "TE_up_MII_vs_1_genes.txt", sep="/")
+TE_up_1_vs_2_genes<- paste(ornament_rbp_dir, "TE_up_1_vs_2_genes.txt", sep="/")
+TE_up_2_vs_4_genes<- paste(ornament_rbp_dir, "TE_up_2_vs_4_genes.txt", sep="/")
+# 4-8 has no sig. genes
+
+TE_down_GV_vs_MII_genes<- paste(ornament_rbp_dir, "TE_down_GV_vs_MII_genes.txt", sep="/")
+TE_down_MII_vs_1_genes<- paste(ornament_rbp_dir, "TE_down_MII_vs_1_genes.txt", sep="/")
+TE_down_1_vs_2_genes<- paste(ornament_rbp_dir, "TE_down_1_vs_2_genes.txt", sep="/")
+TE_down_2_vs_4_genes<- paste(ornament_rbp_dir, "TE_down_2_vs_4_genes.txt", sep="/")
+# 4-8 has no sig. genes
+
+# Control genes
+TE_background_GV_vs_MII_genes<- paste(ornament_rbp_dir, "TE_background_GV_vs_MII_genes.txt", sep="/")
+TE_background_MII_vs_1_genes<- paste(ornament_rbp_dir, "TE_background_MII_vs_1_genes.txt", sep="/")
+TE_background_1_vs_2_genes<- paste(ornament_rbp_dir, "TE_background_1_vs_2_genes.txt", sep="/")
+TE_background_2_vs_4_genes<- paste(ornament_rbp_dir, "TE_background_2_vs_4_genes.txt", sep="/")
+
+TE_all_genesets<- list(
+  TE_up_GV_vs_MII_genes, TE_up_MII_vs_1_genes, TE_up_1_vs_2_genes, TE_up_2_vs_4_genes,
+  TE_down_GV_vs_MII_genes, TE_down_MII_vs_1_genes, TE_down_1_vs_2_genes, TE_down_2_vs_4_genes,
+  TE_background_GV_vs_MII_genes, TE_background_MII_vs_1_genes, TE_background_1_vs_2_genes, 
+  TE_background_2_vs_4_genes)
+
+dev_stage_levels<- c("GV_vs_MII", "MII_vs_1", "1_vs_2", "2_vs_4", "4_vs_8")
+te_direction_levels<- c("TE_up", "TE_down", "TE_background")
+
+
+# Cluster 1-4 SNP-RBP motif intersection
+mouse_trx_variants_intersect_rbps_file<- paste(
+  ornament_rbp_dir, "rbp_selected_snps_intersect_maternal_paternal_seq_added.bed", sep="/")
+
+mouse_trx_variants_intersect_rbps_names<- c("RBP_chrom", "RBP_start", "RBP_stop", "RBP", "SNP_chrom", "SNP_start", "SNP_stop", "maternal", "paternal")
+
+
+# Cluster 1-4 SNP-Kozak intersection
+mouse_trx_variants_intersect_kozak_file<- paste(kozak_dir, "appris_mouse_v2_riboITP_transcriptomic_variants_Kozak_maternal_paternal_seq_added.vcf", sep="/")
+
+mouse_trx_variants_intersect_kozak_drop_fields<- c("V14", "V17", "V18", "V19")
+
+mouse_trx_variants_intersect_kozak_names<- c(
+  "#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", "SAMPLE",
+  "genome_CHROM", "genome_POS", "genome_strand", "Kozak_start_trx_POS", "Kozak_end_trx_POS", 
+  "Maternal_Kozak_DNA", "Paternal_Kozak_DNA", "Maternal_Kozak", "Paternal_Kozak", 
+  "Maternal_score", "Paternal_score", "Paternal_maternal_diff", "Gene", "Key")
+
+riboseq_detailed_snps_file<- paste(kozak_dir, "riboseq_detailed_snps.csv", sep="/")
+rnaseq_detailed_snps_file<- paste(kozak_dir, "rnaseq_detailed_snps.csv", sep="/")
+kozak_canonical_file<- "/Users/ianhoskins/canonical_uORF_scores/Kozak_efficiency/Noderer_Wang_2014_FACS_seq_TIS_efficiency.txt"
+kozak_noncanonical_file<- "/Users/ianhoskins/Kozak_efficiency/noncanonical_uORF_scores/gkx1114_supp/nar-01911-h-2017-File009.txt"
+
+```
+
+
+## Search for RBP motifs near SNPs cluster I-IV genes
+
+```{r Ribo-ITP RBP motif search for clusters 1-4 genes}
+
+cluster1_genes<- c('Nop14', 'Slc13a2')
+cluster2_genes<- c('Cbx3','Srpk1','Umps','Mysm1','Ppp2ca','Bcat1')
+cluster3_genes<- c('Folr1','Zfp296','Nin','Ddx21','Eif3d','Pa2g4','Mrps9','Tsen2')
+cluster4_genes<- c('Cdk1','Baz1a','Lclat1','Ncoa3','Lyar','Dyrk3','Ccnh','Tmppe')
+
+cluster_combined_genes<- c(cluster1_genes, cluster2_genes, cluster3_genes, cluster4_genes)
+cluster_combined_genes_dt<- as.data.table(cluster_combined_genes)
+
+# Write these genes names for extraction of oRNAment RBP IDs
+write.table(cluster_combined_genes_dt,
+            paste(ornament_rbp_dir, "cluster_combined_genes.txt", sep="/"), 
+            quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+#gzcat Mus_musculus_string_to_int_ID_conversion.csv.gz | awk -F',' 'NR == FNR { p[$1]; next } $3 in p' /Users/ianhoskins/Documents/Cenik_lab/Experiments/RiboITP_RBP_analysis/cluster_combined_genes.txt - > /Users/ianhoskins/Documents/Cenik_lab/Experiments/RiboITP_RBP_analysis/cluster_combined_genes_oRNAment_ids.txt
+
+# Now read in the matched IDs and refine/intersect them with the list of SNPs
+ribo_itp_selected_snps<- paste(ribo_itp_dir, "selected_snps.csv", sep="/")
+ribo_itp_selected_snps_dt<- fread(ribo_itp_selected_snps, sep=",")
+
+cluster_combined_genes_oRNAment_ids_file<- paste(
+  ornament_rbp_dir, "cluster_combined_genes_oRNAment_ids.txt", sep="/")
+
+cluster_combined_genes_oRNAment_ids_dt<- fread(
+  cluster_combined_genes_oRNAment_ids_file, sep=",")
+
+names(cluster_combined_genes_oRNAment_ids_dt)<- ornament_ids_header
+
+cluster_combined_genes_oRNAment_ids_filt_dt<- 
+  cluster_combined_genes_oRNAment_ids_dt[
+    ensembl_transcript_id%in%ribo_itp_selected_snps_dt[,unique(transcript)]]
+
+# Write trx IDs
+cluster_combined_genes_oRNAment_trx_ids_dt<- 
+  cluster_combined_genes_oRNAment_ids_filt_dt[
+    ,.(ensembl_transcript_id_INT)]
+
+write.table(cluster_combined_genes_oRNAment_trx_ids_dt, 
+            paste(ornament_rbp_dir, "cluster_combined_genes_oRNAment_trx_ids.txt", sep="/"), 
+            quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+# Write gene IDs
+cluster_combined_genes_oRNAment_gene_ids_dt<- 
+  cluster_combined_genes_oRNAment_ids_filt_dt[
+    ,.(ensembl_gene_id_INT)]
+
+write.table(cluster_combined_genes_oRNAment_gene_ids_dt, 
+            paste(ornament_rbp_dir, "cluster_combined_genes_oRNAment_gene_ids.txt", sep="/"), 
+            quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+# Write just transcript names
+cluster_combined_genes_oRNAment_trxs_dt<- 
+  cluster_combined_genes_oRNAment_ids_filt_dt[,.(ensembl_transcript_id)]
+
+write.table(cluster_combined_genes_oRNAment_trxs_dt, 
+            paste(ornament_rbp_dir, "cluster_combined_genes_oRNAment_trxs.txt", sep="/"), 
+            quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+# Filter the oRNAment database with this file then read in the results
+# gzcat Mus_musculus_cDNA_oRNAment.csv.gz | awk -F',' 'NR == FNR { p[$1]; next } $3 in p' /Users/ianhoskins/Documents/Cenik_lab/Experiments/RiboITP_RBP_analysis/cluster_combined_genes_oRNAment_gene_ids.txt - > /Users/ianhoskins/Documents/Cenik_lab/Experiments/RiboITP_RBP_analysis/cluster_combined_genes_oRNAment.csv
+
+oRNAment_RBP_ids_dt<- fread(oRNAment_RBP_ids_file, sep=",")
+names(oRNAment_RBP_ids_dt)<- ornament_rbp_ids_header
+  
+cluster_combined_genes_oRNAment_res_dt<- fread(
+  paste(ornament_rbp_dir, "cluster_combined_genes_oRNAment_genematch.csv", sep="/"))
+
+names(cluster_combined_genes_oRNAment_res_dt)<- ornament_db_header
+
+# Merge with the RBP dataset
+cluster_combined_genes_oRNAment_res_merge_dt<- 
+  merge(cluster_combined_genes_oRNAment_res_dt, oRNAment_RBP_ids_dt, by="RBP")
+
+cluster_combined_genes_oRNAment_res_merge_dt[,ensembl_gene_id_INT:=ensembl_gene_id]
+
+cluster_combined_genes_oRNAment_res_merge_dt[
+  ,ensembl_transcript_id_noversion:=sapply(
+    strsplit(as.character(ensembl_transcript_id), ".", fixed=T), "[", 1)]
+
+# Annotate the Ribo-ITP transcript for the gene
+# Select only records for the Ribo-ITP transcripts
+cluster_combined_genes_oRNAment_res_merge_select_dt<- 
+  cluster_combined_genes_oRNAment_res_merge_dt[
+    ensembl_transcript_id_noversion%in%
+      cluster_combined_genes_oRNAment_trx_ids_dt[,ensembl_transcript_id_INT]]
+
+# Annotate with Ensembl transcript ID
+cluster_combined_genes_oRNAment_res_merge_select_dt[
+  ,transcript:=cluster_combined_genes_oRNAment_ids_filt_dt[
+    match(cluster_combined_genes_oRNAment_res_merge_select_dt[,ensembl_transcript_id_noversion],
+          ensembl_transcript_id_INT), ensembl_transcript_id]]
+
+# Annotate with gene name
+cluster_combined_genes_oRNAment_res_merge_select_dt[
+  ,gene_name:=cluster_combined_genes_oRNAment_ids_filt_dt[
+    match(cluster_combined_genes_oRNAment_res_merge_select_dt[,ensembl_gene_id],
+          ensembl_gene_id_INT), external_gene_name]]
+
+# Annotate with cluster
+cluster_combined_genes_oRNAment_res_merge_select_dt[
+  gene_name%in%cluster1_genes, Cluster:="1"]
+
+cluster_combined_genes_oRNAment_res_merge_select_dt[
+  gene_name%in%cluster2_genes, Cluster:="2"]
+
+cluster_combined_genes_oRNAment_res_merge_select_dt[
+  gene_name%in%cluster3_genes, Cluster:="3"]
+
+cluster_combined_genes_oRNAment_res_merge_select_dt[
+  gene_name%in%cluster4_genes, Cluster:="4"]
+
+cluster_combined_genes_oRNAment_res_merge_select_dt[,Cluster:=factor(Cluster)]
+
+# Filter the dataset
+# p_cutoff<- 0.05  # probability motif is structurally unpaired; unpaired_probability<=p_cutoff 
+score_cutoff<- 1  # MSS- motif similarity score
+cluster_combined_genes_oRNAment_res_merge_select_filt_dt<- 
+  cluster_combined_genes_oRNAment_res_merge_select_dt[score>=score_cutoff]
+
+write.table(cluster_combined_genes_oRNAment_res_merge_select_filt_dt,
+            paste(ornament_rbp_dir, "cluster_combined_genes_oRNAment_res_annot.txt", sep="/"), 
+            quote=FALSE, row.names=FALSE, sep="\t")
+
+
+```
+
+```{r SNP intersection with RBP motifs- counts by cluster and region}
+
+# Generate table of all SNP-RBP motif intersections
+
+ribo_itp_selected_snps_bed_input_dt<- ribo_itp_selected_snps_dt[
+  ,.(chromosome, chr_pos - 1, chr_pos)]
+
+write.table(ribo_itp_selected_snps_bed_input_dt, 
+            paste(ribo_itp_dir, "selected_snps.bed", sep="/"), 
+            quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+
+# Now read in the intersection results
+rbp_snp_intersect_file<- paste(ornament_rbp_dir, "rbp_selected_snps_intersect.bed", sep="/")
+rbp_snp_intersect_dt<- fread(rbp_snp_intersect_file)
+names(rbp_snp_intersect_dt)<- c("RBP_chromosome", "RBP_start", "RBP_end", "RBP", "SNP_chromsome", "SNP_start", "SNP_end")
+
+# Merge with the original SNP file to annotate
+rbp_snp_intersect_dt[,Key:=paste(SNP_chromsome, SNP_end, sep=":")]
+ribo_itp_selected_snps_dt[,Key:=paste(chromosome, chr_pos, sep=":")]
+
+rbp_snp_intersect_merge_dt<- merge(
+  rbp_snp_intersect_dt, ribo_itp_selected_snps_dt, by="Key")
+
+# Annotate with gene cluster
+rbp_snp_intersect_merge_dt[gene%in%cluster1_genes, Cluster:="1"]
+rbp_snp_intersect_merge_dt[gene%in%cluster2_genes, Cluster:="2"]
+rbp_snp_intersect_merge_dt[gene%in%cluster3_genes, Cluster:="3"]
+rbp_snp_intersect_merge_dt[gene%in%cluster4_genes, Cluster:="4"]
+rbp_snp_intersect_merge_dt[,Cluster:=factor(Cluster)]
+
+# Write the results
+write.table(rbp_snp_intersect_merge_dt, 
+  paste(ornament_rbp_dir, "selected_snps_oRNAment_rbp_intersect.txt", sep="/"),
+  quote=FALSE, row.names=FALSE, sep="\t")
+
+# Plot number of RBP intersections by SNP
+rbp_snp_intersect_merge_hist_dt<- rbp_snp_intersect_merge_dt[
+  ,.N,by=.(Key, Cluster, region)]
+
+rbp_snp_intersect_merge_hist_dt[,region:=factor(region, levels=c("UTR5", "CDS", "UTR3"))]
+
+rbp_snp_intersect_merge_hist_gg<- ggplot(
+  data=rbp_snp_intersect_merge_hist_dt, 
+  aes(x=Cluster, y=N, col=region))
+
+rbp_snp_intersect_merge_hist_gg+
+  geom_boxplot(position="dodge")+
+  geom_point(position=position_jitterdodge(jitter.width=0.15))+
+  scale_color_manual(values=REGION_COLS[1:3])+
+  labs(y="Number intersected RBP motifs", 
+       col="Region")+
+  theme_cowplot()
+
+```
+
+```{r SNP intersect RBP motifs filtering on score diff between maternal/paternal}
+
+mss_diff_percentile_thresh<- 0.95
+
+mouse_oRNAment_RBP_pwms_files<- list.files(mouse_oRNAment_RBP_pwms_dir, pattern="PWM", full.names=TRUE)
+ornament_pwms_list<- lapply(mouse_oRNAment_RBP_pwms_files, fread, sep="\t")
+ornament_pwms_all_dt<- rbindlist(ornament_pwms_list)
+ornament_pwms_all_dt[,RBP:=rep(seq(1,453), each=7)]
+rm(ornament_pwms_list)
+
+oRNAment_RBP_ids_dt<- fread(oRNAment_RBP_ids_file, sep=",")
+names(oRNAment_RBP_ids_dt)<- ornament_rbp_ids_header
+
+# Annotate with RBP name
+ornament_pwms_all_merge_dt<- merge(ornament_pwms_all_dt, oRNAment_RBP_ids_dt, by="RBP")
+ornament_pwms_all_merge_dt[,RBP_short:=sapply(base::strsplit(RBP_name, " ", fixed=T), "[", 1)]
+
+# Annotate the consensus motif for each RBP PWM
+get_consensus_motif<- function(pwm){
+  pwm_letters<- colnames(pwm)
+  max_probs_indices<- apply(pwm, 1, which.max)
+  consensus_seq<- NULL
+  for(i in 1:nrow(pwm)){
+    consensus_seq<- c(consensus_seq, pwm_letters[max_probs_indices[i]])
+  }
+  consensus_seq_res<- paste0(consensus_seq, collapse="")
+  return(consensus_seq_res)
+}
+
+ornament_pwms_all_merge_consensus_dt<- ornament_pwms_all_merge_dt[
+  ,get_consensus_motif(.SD), by=.(RBP_name), .SDcols=c("A", "C", "G", "U")]
+
+names(ornament_pwms_all_merge_consensus_dt)<- c("RBP", "Consensus")
+
+ornament_pwms_all_merge_consensus_dt[,RBP_short:=sapply(strsplit(RBP, " "), "[", 1)]
+
+ornament_pwms_all_merge_consensus_key_dt<- ornament_pwms_all_merge_consensus_dt[
+  ,.(N=.N, Key=paste0(RBP, collapse=",")), by=.(Consensus)]
+
+# Now read in the SNPs that intersect with RBPs and score the maternal and paternal sequences for all PWMs
+# that have a matching RBP name
+compute_mss<- function(curr_score, min_score, max_score){
+  max_min_diff<- max_score-min_score
+  if(max_min_diff == 0){
+    return(NaN)
+  } else{
+    res<- (curr_score - min_score) / max_min_diff
+    return(res)
+  }
+}
+
+# Returns MSS for a seq and the consensus for the PWM
+compute_mss_from_probs<- function(seq, pwm){
+  
+  seq_split<- unlist(strsplit(seq, ""))
+  pwm_letters<- colnames(pwm)
+  
+  probs<- NULL
+  max_scores<- NULL
+  min_scores<- NULL
+  consensus_seq<- NULL
+  
+  for(i in 1:length(seq_split)){
+    seq_i<- seq_split[i]
+    
+    # We need the product of the probs in the pwm for the kmer in questions
+    j<- which(pwm_letters==seq_i)
+    pwm_i_j<- pwm[i,j]
+    probs<- c(probs, pwm_i_j)
+    
+    # For oRNAment MSS score, we normalize to the max and min probs
+    max_prob_j<- which.max(pwm[i,])
+    min_prob_j<- which.min(pwm[i,])
+    max_scores<- c(max_scores, pwm[i, max_prob_j])
+    min_scores<- c(min_scores, pwm[i, min_prob_j])
+    consensus_seq<- c(consensus_seq, pwm_letters[max_prob_j])
+  }
+  
+  curr_score<- exp(sum(log(probs)))
+  max_score<- exp(sum(log(max_scores)))
+  min_score<- exp(sum(log(min_scores)))
+  mss<- compute_mss(curr_score, min_score, max_score)
+  
+  return(list(mss, paste0(consensus_seq, collapse="")))
+}
+
+# Read in maternal and paternal transcript sequences 
+# for matching to all PWMs matching the RBP
+mouse_trx_variants_intersect_rbps_dt<- fread(mouse_trx_variants_intersect_rbps_file, sep="\t")
+names(mouse_trx_variants_intersect_rbps_dt)<- mouse_trx_variants_intersect_rbps_names
+
+mouse_trx_variants_intersect_rbps_dt[
+  ,maternal_rna:=gsub("T", "U", maternal), 
+  by=seq_len(nrow(mouse_trx_variants_intersect_rbps_dt))]
+
+mouse_trx_variants_intersect_rbps_dt[
+  ,paternal_rna:=gsub("T", "U", paternal), 
+  by=seq_len(nrow(mouse_trx_variants_intersect_rbps_dt))]
+
+score_motifs<- function(x, pwms=ornament_pwms_all_merge_dt){
+  rbp<- x[,RBP]
+  rbp_pwms<- pwms[RBP_short==rbp, as.character(unique(RBP_name))]
+  
+  # This is not a great solution (expanding inside a function)
+  # but will do for now
+  res_dt<- NULL
+  for(i in 1:length(rbp_pwms)){
+    
+    rbp_name<- rbp_pwms[i]
+    rbp_pwm<- as.matrix(pwms[RBP_name==rbp_name, c("A", "C", "G", "U")])
+    maternal_score_consensus<- compute_mss_from_probs(x[,maternal_rna], rbp_pwm)
+    paternal_score_consensus<- compute_mss_from_probs(x[,paternal_rna], rbp_pwm)
+    
+    maternal_score<- maternal_score_consensus[[1]]
+    paternal_score<- paternal_score_consensus[[1]]
+    consensus_seq<- maternal_score_consensus[[2]]
+    
+    res_dt<- rbind(res_dt, data.table(cbind(
+      x, rbp_name, maternal_score, paternal_score, consensus_seq)))
+  }
+  return(res_dt)
+}
+
+# Remove any sequences where there are Ns
+# mouse_trx_variants_intersect_rbps_dt[grepl("N", paternal) | grepl("N", maternal)]
+# 102 SNPs, due to other SNPs within +/- 4 nt
+mouse_trx_variants_intersect_rbps_noN_dt<- mouse_trx_variants_intersect_rbps_dt[
+  !(grepl("N", paternal) | grepl("N", maternal))]
+
+# Score maternal and paternal motifs for each PWM
+mouse_trx_variants_intersect_rbps_noN_scores_dt<- mouse_trx_variants_intersect_rbps_noN_dt[
+  ,score_motifs(.SD), by=seq_len(nrow(mouse_trx_variants_intersect_rbps_noN_dt)), 
+  .SDcols=c("RBP_chrom", "RBP_start", "RBP_stop", "SNP_start", "SNP_stop",
+            "RBP", "maternal_rna", "paternal_rna")]
+
+mouse_trx_variants_intersect_rbps_noN_scores_dt[,Key:=paste(RBP_chrom, SNP_stop, sep=":")]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_dt<- merge(
+  mouse_trx_variants_intersect_rbps_noN_scores_dt, ribo_itp_selected_snps_dt, by="Key")
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_dt[
+  ,`:=`(paternal_maternal_diff=paternal_score-maternal_score,
+        abs_paternal_maternal_diff=abs(paternal_score-maternal_score))]
+
+write.table(mouse_trx_variants_intersect_rbps_noN_scores_merge_dt, 
+            paste(ornament_rbp_dir, "rbp_selected_snps_intersect_maternal_paternal_mss_all_pwms.txt", sep="/"),
+            quote=FALSE, row.names=FALSE, sep="\t")
+
+# Summarize RBP PWMs so we have a mean value for each RBP at each SNP position
+# Take the max among PWMs so we have maximal sensitivity for motif changes
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_dt<- 
+  mouse_trx_variants_intersect_rbps_noN_scores_merge_dt[
+    ,.(abs_paternal_maternal_diff=max(abs_paternal_maternal_diff)), 
+    by=.(RBP, RBP_chrom, SNP_stop, gene, region)]
+
+# Annotate which RBP PWM was the max, to enable collapse of 
+# RBPs on the consensus sequence
+mouse_trx_variants_intersect_rbps_noN_scores_merge_max_consensus_dt<- 
+  mouse_trx_variants_intersect_rbps_noN_scores_merge_dt[
+    ,.(Consensus=consensus_seq[which.max(abs_paternal_maternal_diff)]), 
+    by=.(RBP, RBP_chrom, SNP_stop, gene, region)]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_max_consensus_dt[
+  ,Consensus_key:=paste(RBP, RBP_chrom, SNP_stop, gene, region, sep=":")]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_dt[
+  ,Consensus_key:=paste(RBP, RBP_chrom, SNP_stop, gene, region, sep=":")]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_dt[
+  ,Consensus:=mouse_trx_variants_intersect_rbps_noN_scores_merge_max_consensus_dt[
+    match(mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_dt[
+      ,Consensus_key], Consensus_key), Consensus]]
+
+# Now that we have identified the pertinent consensus, aggregate
+# the non-absolute scores
+
+# Reset the key for the non-summarized dt
+mouse_trx_variants_intersect_rbps_noN_scores_merge_dt[
+  ,Key:=paste(RBP, RBP_chrom, SNP_stop, gene, region, consensus_seq, sep=":")]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_dt[
+  ,Key:=paste(RBP, RBP_chrom, SNP_stop, gene, region, Consensus, sep=":")]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_dt[
+  ,paternal_maternal_diff:=mouse_trx_variants_intersect_rbps_noN_scores_merge_dt[
+    match(mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_dt[
+      ,Key], Key), paternal_maternal_diff]]
+
+# Now collapse RBPs with the same consensus
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_dt<- 
+  mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_dt[
+    ,.(paternal_maternal_diff_med=median(paternal_maternal_diff), 
+       RBPs=paste(RBP, collapse=",")), 
+    by=.(Consensus, RBP_chrom, SNP_stop, gene, region)]
+
+robust_standardize<- function(x){
+  res<- (x - median(x)) / IQR(x)
+  return(res)
+}
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_dt[
+  ,standardized_diff:=robust_standardize(paternal_maternal_diff_med)]
+
+# Use percentile at the level of RBP to determine score diff cutoff
+snp_intersect_rbp_motif_thresh<- mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_dt[
+  ,quantile(abs(standardized_diff), probs=mss_diff_percentile_thresh)]
+
+# Just plot as density
+mouse_trx_variants_intersect_rbps_noN_scores_gg<- ggplot(
+  data=mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_dt, 
+  aes(x=standardized_diff))
+
+mouse_trx_variants_intersect_rbps_noN_scores_gg+
+  geom_vline(
+    col="grey", linetype=2, xintercept=c( 
+      -1*snp_intersect_rbp_motif_thresh, 
+      snp_intersect_rbp_motif_thresh))+
+  geom_density()+
+  geom_rug(alpha=0.5)+
+  labs(x="Standardized paternal - maternal MSS")+
+  theme_cowplot()
+
+# Get the set of RBPs that have maximal paternal - maternal diff in MSS
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_dt<- 
+  mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_dt[
+    abs(standardized_diff)>snp_intersect_rbp_motif_thresh]
+
+write.table(mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_dt, 
+            paste(ornament_rbp_dir, 
+                  "rbp_selected_snps_intersect_maternal_paternal_pwm_agg_mss_diff.txt", sep="/"),
+            quote=FALSE, row.names=FALSE, sep="\t")
+
+write.table(mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_dt, 
+            paste(ornament_rbp_dir, 
+                  "rbp_selected_snps_intersect_maternal_paternal_pwm_agg_mss_diff_95perc.txt", sep="/"),
+            quote=FALSE, row.names=FALSE, sep="\t")
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_dt[
+  ,Key:=factor(paste(gene, region, RBP_chrom, SNP_stop, sep=":"))]
+
+# NOVA1 vs NOVA2 expr?
+low_expr_rbps<- c("ELAVL4", "MSI1", "KHDRBS3", "PABPC5", "RBM4B", "TIA1", "EIF4G2", 
+                  "RBFOX3", "BRUNOL6", "RBM23", "SRSF8", "A1CF", "MBNL1", "NOVA1", "RBMS3", "PABPN1L")
+
+orphan_rbps<- c("AT1G76460TAIRG", "Tbg97262300", "LmjF180180", "egw109003261", "TVAG267990", "NAB2CONSTRUCT", "Tbg97234300", "mubCONSTRUCT", "ANIA04546", "Tbg97294840", "MAL8P140", "egw109003261", "Tbg97294840", "TVAG267990", "ZC3H14CONSTRUCT")
+
+# "Sf2", "shep",
+drosophila_rbps<- c("elav", "Rbp9", "fne", "CG7804", "CG2950", "Rox8", "pum", "qkr58E1", "Rnp4F",  "eIF2alpha", "msi")
+celegans_rbps<- c("sup12", "unc75",  "etr1")
+
+# tiar1, tiar3 retained from C. elegans because shared with CPEB4
+# TVAG002940, Tbg97295210 orphans retained, shared with SART3
+# LmjF354130 orphan retained, shared with PABPC4
+
+filter_rbps<- paste(c(orphan_rbps, drosophila_rbps, celegans_rbps, low_expr_rbps), collapse="|")
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt<- 
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_dt[!grepl(filter_rbps, RBPs)]
+
+# This should be renamed as such
+#DAZ3 -> DAZL
+#Fusip1 -> SRSF10
+#shep-> RELB
+#SF2 -> SRSF1
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt[
+  grepl("DAZ3", RBPs), RBPs:="DAZL"]
+
+# Remove the orphan RBPs sharing the same consensus with tagged RBPs
+# Rename RBPs if one of the RBPs sharing the consensus has no expression
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt[
+  RBPs=="Fusip1", RBPs:="SRSF10"]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt[
+  RBPs=="shep", RBPs:="RELB"]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt[
+  RBPs=="LmjF354130,PABPC4", RBPs:="PABPC4"]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt[
+  RBPs=="A1CF,HNRNPD", RBPs:="HNRNPD"]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt[
+   RBPs=="BOLL,HNRNPC,HNRNPCL1,Smp067420", RBPs:="HNRNPC,HNRNPCL1"]
+
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_counts_dt<- 
+  mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt[,.N,by=.(Key)]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_counts_dt<- 
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_counts_dt[order(-N, Key)]
+
+mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt[,Key:=factor(Key, levels=mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_counts_dt[,Key])]
+
+mouse_trx_variants_intersect_rbps_noN_scores_filt_heat_gg<- ggplot(
+  data=mouse_trx_variants_intersect_rbps_noN_scores_merge_summ_agg_filt_final_dt, 
+  aes(x=RBPs, y=Key, fill=standardized_diff))
+
+mouse_trx_variants_intersect_rbps_noN_scores_filt_heat_gg+
+  geom_tile()+
+  scale_fill_viridis(option="E", begin=0.05, end=0.95)+
+  theme_bw()+
+  labs(y="Gene, region, genomic position", x="RBP motif", 
+       fill="Standardized paternal - maternal MSS")+
+  theme(legend.position="bottom", 
+        axis.text.x=element_text(angle=90, size=9),
+        axis.text.y=element_text(size=9))
+
+```
+
+
+## Cluster I-IV SNPs in 5' UTR
+
+Look for SNPs that generate alternative start codons in the 5' UTR.
+
+```{r 5' UTR SNPs and alternative start codons}
+
+ribo_itp_selected_snps_dt[,`:=`(
+  maternal_seq=gsub("N", maternal, sequence), 
+  paternal_seq=gsub("N", paternal, sequence)),
+  by=seq_len(nrow(ribo_itp_selected_snps_dt))]
+
+alt_start_regex<- "[ATCG]+[AG]{1}[ATCG]{2}[ACG]{1}TG[AG]{1}[ATCG]+"
+
+ribo_itp_selected_snps_dt[,`:=`(maternal_kozak_match=FALSE, paternal_kozak_match=FALSE)]
+ribo_itp_selected_snps_dt[grepl(alt_start_regex, maternal_seq), maternal_kozak_match:=TRUE]
+ribo_itp_selected_snps_dt[grepl(alt_start_regex, paternal_seq), paternal_kozak_match:=TRUE]
+
+ribo_itp_selected_snps_alt_cand_dt<- ribo_itp_selected_snps_dt[
+  region=="UTR5" & (paternal_kozak_match==TRUE | maternal_kozak_match==TRUE)]
+
+write.table(ribo_itp_selected_snps_alt_cand_dt,
+  paste(ribo_itp_dir, "selected_snps_kozak_like.txt", sep="/"),
+  quote=FALSE, row.names=FALSE, sep="\t")
+
+# Determine the efficiency of the noncanonical Kozak for the maternal/paternal SNP
+kozak_noncanonical_dt<- fread(kozak_noncanonical_file, sep="\t", header=TRUE)
+# kozak_noncanonical_dt[,summary(`TIS Efficiency`)]
+
+Tmppe_uORF_cand_maternal_kozak<- gsub("T", "U", "CATCGTGG")
+Tmppe_uORF_cand_paternal_kozak<- gsub("T", "U", "CATCTTGG")
+
+kozak_noncanonical_dt[`TIS Sequence`==Tmppe_uORF_cand_maternal_kozak]
+kozak_noncanonical_dt[`TIS Sequence`==Tmppe_uORF_cand_paternal_kozak]
+
+```
+
+
+## Cluster I-IV SNPs in Kozak region
+
+SNPs were intersected with the -6 to +5 region of the transcript and scored for each allele.
+
+```{r SNPs intersect with Kozak regions}
+
+mouse_trx_region_bed_dt<- fread(mouse_trx_region_lengths_file, sep="\t")
+names(mouse_trx_region_bed_dt)[1]<- "seqname"
+
+mouse_trx_region_bed_dt[,Transcript_ID:=sapply(
+  base::strsplit(as.character(seqname), "|", fixed=TRUE), "[", 1)]
+
+mouse_trx_region_bed_dt[,Transcript_ID_noversion:=sapply(
+  base::strsplit(as.character(seqname), ".", fixed=TRUE), "[", 1)]
+
+trx_match_dt<- mouse_trx_region_bed_dt[,.(Transcript_ID_noversion, seqname)]
+
+ribo_itp_selected_snps_trx_bed_dt<- ribo_itp_selected_snps_dt[
+  ,.(transcript, position - 1, position)]
+
+# Generate the full contig name for BED file intersect
+ribo_itp_selected_snps_trx_bed_dt[
+  ,transcript:=trx_match_dt[match(
+    ribo_itp_selected_snps_trx_bed_dt[,transcript], Transcript_ID_noversion), seqname]]
+
+write.table(ribo_itp_selected_snps_trx_bed_dt, 
+            paste(ribo_itp_dir, "selected_snps_trx.bed", sep="/"), 
+            quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+
+# bedtools intersect -wa -wb -a appris_mouse_v2_filtered_regions_Kozak_fix.bed -b /Users/ianhoskins/Documents/Cenik_lab/Experiments/RiboITP_RBP_analysis/selected_snps_trx.bed > /Users/ianhoskins/Documents/Cenik_lab/Experiments/RiboITP_RBP_analysis/selected_snps_trx_Kozak.bed
+
+# One SNP was found; inspect
+#ribo_itp_selected_snps_dt[transcript=="ENSMUST00000031862" & position==234]
+
+# Determine if one allele has a strong efficiency than the other by yeast FACS-seq
+facs_seq_2014_dt<- fread(kozak_canonical_file, sep="\t")
+cbx3_maternal<- "UAAAAAAUGGC"
+cbx3_paternal<- "UUAAAAAUGGC"
+facs_seq_2014_cbx3_maternal<- facs_seq_2014_dt[sequence%in%cbx3_maternal]
+facs_seq_2014_cbx3_paternal<- facs_seq_2014_dt[sequence%in%cbx3_paternal]
+
+
+
+# Read in all mouse SNPs that intersect Kozak regions, and use Noderer et al. 2014
+# to score their efficiencies
+mouse_trx_variants_intersect_kozak_dt<- fread(mouse_trx_variants_intersect_kozak_file, sep="\t")
+
+#mouse_trx_variants_intersect_kozak_dt[grepl("N", V20),]
+# There are 26 records with Ns; are these from SNPs in close proximity?
+mouse_trx_variants_intersect_kozak_filt_dt<- mouse_trx_variants_intersect_kozak_dt[
+  !(grepl("N", V20) | grepl("N", V21))]
+
+mouse_trx_variants_intersect_kozak_filt_dt[,`:=`(
+  Maternal_Kozak=gsub("T", "U", V20), Paternal_Kozak=gsub("T", "U", V21)),
+  by=seq_len(nrow(mouse_trx_variants_intersect_kozak_filt_dt))]
+
+# Annotate the Kozak scores
+mouse_trx_variants_intersect_kozak_filt_dt[,Maternal_score:=facs_seq_2014_dt[
+  match(mouse_trx_variants_intersect_kozak_filt_dt[,Maternal_Kozak], sequence), efficiency]]
+
+mouse_trx_variants_intersect_kozak_filt_dt[,Paternal_score:=facs_seq_2014_dt[
+  match(mouse_trx_variants_intersect_kozak_filt_dt[,Paternal_Kozak], sequence), efficiency]]
+
+mouse_trx_variants_intersect_kozak_filt_dt[,Paternal_maternal_diff:=Paternal_score-Maternal_score]
+
+mouse_trx_variants_intersect_kozak_filt_dt[,Gene:=sapply(base::strsplit(V1, "|", fixed=T), "[", 5)]
+mouse_trx_variants_intersect_kozak_filt_dt[,Key:=paste(Gene, V2, sep=":")]
+
+mouse_trx_variants_intersect_kozak_filt_gg<- ggplot(
+  data=mouse_trx_variants_intersect_kozak_filt_dt, 
+  aes(x=Paternal_maternal_diff))
+
+mouse_trx_variants_intersect_kozak_filt_gg+
+  geom_histogram()+
+  geom_vline(xintercept=c(-25, 25), col="grey", linetype=2)+
+  labs(x="Paternal - maternal Kozak efficiency
+Noderer et al., 2014", y="SNPs in Kozak (-6 to -5)")+
+  theme_cowplot()
+
+# Select SNPs with diff in efficiency of abs(diff)>=25
+kozak_diff_thresh<- 25
+mouse_trx_variants_intersect_kozak_filt_cand_dt<- 
+  mouse_trx_variants_intersect_kozak_filt_dt[abs(Paternal_maternal_diff)>=kozak_diff_thresh]
+
+# Also write out the SNPs that alter the start codon (found due to 
+# absence from Kozak efficiency annotation)
+mouse_trx_variants_intersect_kozak_filt_perturb_start_dt<- 
+  mouse_trx_variants_intersect_kozak_filt_dt[
+    is.na(Paternal_maternal_diff) & nchar(Maternal_Kozak)==11]
+
+mouse_trx_variants_intersect_kozak_filt_cand_final_dt<- rbind(
+  mouse_trx_variants_intersect_kozak_filt_cand_dt, 
+  mouse_trx_variants_intersect_kozak_filt_perturb_start_dt)
+
+# Write the candidates
+mouse_trx_variants_intersect_kozak_filt_cand_final_res_dt<- 
+  mouse_trx_variants_intersect_kozak_filt_cand_final_dt[
+    ,-..mouse_trx_variants_intersect_kozak_drop_fields]
+
+names(mouse_trx_variants_intersect_kozak_filt_cand_final_res_dt)<- 
+mouse_trx_variants_intersect_kozak_names
+
+write.table(
+  mouse_trx_variants_intersect_kozak_filt_cand_final_res_dt,
+  paste(kozak_dir, "appris_mouse_v2_riboITP_transcriptomic_variants_Kozak_maternal_paternal_seq_added_differential.vcf", sep="/"),
+  quote=FALSE, row.names=FALSE, sep="\t")
+
+# Now globally compare Kozak diff to paternal ratios in Ribo and RNA-seq
+riboseq_detailed_snps_dt<- fread(riboseq_detailed_snps_file, sep=",", header=TRUE)
+rnaseq_detailed_snps_dt<- fread(rnaseq_detailed_snps_file, sep=",", header=TRUE)
+
+riboseq_detailed_snps_dt[grepl("GV", experiment), Stage:="GV"]
+riboseq_detailed_snps_dt[grepl("MII", experiment), Stage:="MII"]
+riboseq_detailed_snps_dt[grepl("1cell", experiment), Stage:="1cell"]
+riboseq_detailed_snps_dt[grepl("2cell", experiment), Stage:="2cell"]
+riboseq_detailed_snps_dt[grepl("4cell", experiment), Stage:="4cell"]
+riboseq_detailed_snps_dt[grepl("8cell", experiment), Stage:="8cell"]
+riboseq_detailed_snps_dt[,Stage:=as.factor(Stage)]
+
+# Sum paternal and maternal counts across experiments for each stage
+riboseq_detailed_snps_summ_dt<- riboseq_detailed_snps_dt[
+  ,.(paternal=sum(paternal), maternal=sum(maternal)), 
+  by=.(Stage, transcript)]
+
+# Now extract transcripts for which there is a SNP in the Kozak
+riboseq_detailed_snps_summ_kozak_dt<- riboseq_detailed_snps_summ_dt[
+  transcript%in%mouse_trx_variants_intersect_kozak_filt_dt[,unique(Gene)]]
+
+# Finally compute the ratio and filter
+riboseq_detailed_snps_summ_kozak_dt[,Paternal_ratio:=paternal / (paternal + maternal)]
+
+riboseq_detailed_snps_summ_kozak_filt_dt<- 
+  riboseq_detailed_snps_summ_kozak_dt[!is.nan(Paternal_ratio)]
+
+riboseq_detailed_snps_summ_kozak_filt_dt[,Gene:=transcript]
+
+# Now finally merge with the Kozak information
+riboseq_detailed_snps_summ_kozak_filt_merge_dt<- 
+  merge(riboseq_detailed_snps_summ_kozak_filt_dt[,-c("transcript")], 
+        mouse_trx_variants_intersect_kozak_filt_dt[
+          ,.(Maternal_Kozak, Paternal_Kozak, Maternal_score, 
+             Paternal_score, Paternal_maternal_diff, Gene)], by="Gene")
+
+riboseq_detailed_snps_summ_kozak_filt_merge_dt[
+  ,Stage:=factor(Stage, levels=c("GV", "MII", "1cell", "2cell", "4cell", "8cell"))]
+
+riboseq_detailed_snps_summ_kozak_filt_merge_dt[,Gene_short:=sapply(strsplit(Gene,"-"), "[", 1)]
+
+riboseq_detailed_snps_summ_kozak_filt_merge_dt[
+  (Gene_short=="Hprt" & Paternal_score>100 & Maternal_score<80 & Stage%in%c("4cell", "8cell")) | 
+    (Gene_short=="Asb13" & Paternal_score<58 & Maternal_score>78 & Stage%in%c("2cell", "8cell")), 
+  Label:=Gene_short]
+
+kozak_paternal_ratio_gg<- ggplot(
+  data=riboseq_detailed_snps_summ_kozak_filt_merge_dt[Stage%in%c("2cell", "4cell", "8cell")],
+  aes(x=Maternal_score, y=Paternal_score, col=Paternal_ratio, label=Label))
+
+kozak_paternal_ratio_gg+
+  facet_wrap(~Stage)+
+  geom_abline(slope=1, col="grey", linetype=2)+
+  geom_text_repel(col="black", min.segment.length=unit(0, 'lines'))+
+  geom_point()+
+  coord_cartesian(xlim=c(25, 150), ylim=c(25, 150))+
+  scale_color_viridis(option="B", end=0.9)+
+  labs(x="Maternal Kozak efficiency", 
+       y="Paternal Kozak efficiency", 
+       col="Paternal ratio")+
+  theme_cowplot()
+
+# No clear association between paternal ratio and Kozak efficencies
+
+# Look at the SNPs that perturb the canonical start as these might be
+# expected to show stronger effect
+# Look only in 4- and 8-cell as in these stages paternal should be expressed
+# riboseq_detailed_snps_summ_kozak_filt_merge_dt[is.na(Paternal_maternal_diff) & Stage%in%c("4cell", "8cell")]
+
+```
+
+
+## RBP motif counts by cluster and region
+
+Simply enumerate RBP counts for the cluster I-IV genes from the oRNAment database.
+
+```{r All RBP counts by cluster and region- no SNP intersect}
+
+# Annotate with a better label for region
+cluster_combined_genes_oRNAment_res_merge_select_filt_dt[
+  region=="5;5", Region_label:=UTR5_L]
+
+cluster_combined_genes_oRNAment_res_merge_select_filt_dt[
+  region=="C;C", Region_label:=CDS_L]
+
+# Annotate with a better label for region
+cluster_combined_genes_oRNAment_res_merge_select_filt_dt[
+  region=="3;3", Region_label:=UTR3_L]
+
+# For simplicity just assign motifs that span the junctions to the UTRs
+cluster_combined_genes_oRNAment_res_merge_select_filt_dt[
+  region=="5;C", Region_label:=UTR5_L]
+
+cluster_combined_genes_oRNAment_res_merge_select_filt_dt[
+  region=="C;3", Region_label:=UTR3_L]
+
+cluster_combined_genes_oRNAment_res_merge_select_filt_dt[
+  ,Region_label:=factor(Region_label, levels=c(UTR5_L, CDS_L, UTR3_L))]
+
+cluster_combined_genes_oRNAment_res_merge_select_filt_dt[
+  ,RBP_name_clean:=as.factor(sapply(strsplit(
+    as.character(RBP_name), " ", fixed=T), "[", 1))]
+
+# Too many RBPs to show graphically
+#cluster_combined_genes_oRNAment_res_merge_select_filt_dt[,length(unique(RBP_name_clean))]
+
+cluster_combined_genes_oRNAment_res_merge_select_filt_counts_dt<-
+  cluster_combined_genes_oRNAment_res_merge_select_filt_dt[
+    ,.N,by=.(Cluster, Region_label)]
+
+cluster_counts_by_region_gg<- ggplot(
+  data=cluster_combined_genes_oRNAment_res_merge_select_filt_counts_dt,
+  aes(x=Cluster, y=log2(N), fill=Region_label))
+
+cluster_counts_by_region_gg+
+  geom_bar(stat="identity", position="dodge")+
+  scale_fill_manual(values=REGION_COLS[1:3])+
+  labs(x="Cluster", y="RBP motifs, MSS == 1", 
+       fill="Region")+
+  theme_cowplot()
+
+```
+
+
+## oRNAment RBP motifs enriched in TE genesets
+
+Differential translational effiency (TE) for genes between mouse embryonic developmental stages may be tied to RNA-binding protein regulation. To address this, select control transcripts by nonparametric matching on the lengths and GC content of each differential TE transcript's CDS and 3' UTR. Find differential RBPs by testing association between genesets and RBP sites > 0. 
+
+First generate lists of the gene names to use for RBP DE analysis.
+
+```{r TE genelist prep}
+
+GV_MII_deseq2<- fread(paste(deseq_res_dir, "GV_MII_deseq2.csv", sep="/"), sep=",", header=T)
+MII_1cell_deseq2<- fread(paste(deseq_res_dir, "MII_1cell_deseq2.csv", sep="/"), sep=",", header=T)
+cell1_2_deseq2<- fread(paste(deseq_res_dir, "cell1_2_deseq2.csv", sep="/"), sep=",", header=T)
+cell2_4_deseq2<- fread(paste(deseq_res_dir, "cell2_4_deseq2.csv", sep="/"), sep=",", header=T)
+cell4_8_deseq2<- fread(paste(deseq_res_dir, "cell4_8_deseq2.csv", sep="/"), sep=",", header=T)
+
+deseq_thresh<- 0.01
+GV_MII_deseq2_up<- GV_MII_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
+GV_MII_deseq2_down<- GV_MII_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+
+MII_1cell_deseq2_up<- MII_1cell_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
+MII_1cell_deseq2_down<- MII_1cell_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+
+cell1_2_deseq2_up<- cell1_2_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
+cell1_2_deseq2_down<- cell1_2_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+
+cell2_4_deseq2_up<- cell2_4_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
+cell2_4_deseq2_down<- cell2_4_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+
+cell4_8_deseq2_up<- cell4_8_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
+cell4_8_deseq2_down<- cell4_8_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+
+# Write the results
+write.table(GV_MII_deseq2[,transcript],
+  paste(ornament_rbp_dir, "TE_background_GV_vs_MII_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+write.table(GV_MII_deseq2_up,
+  paste(ornament_rbp_dir, "TE_up_GV_vs_MII_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+write.table(GV_MII_deseq2_down,
+  paste(ornament_rbp_dir, "TE_down_GV_vs_MII_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+
+write.table(MII_1cell_deseq2[,transcript],
+  paste(ornament_rbp_dir, "TE_background_MII_vs_1_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+write.table(MII_1cell_deseq2_up,
+  paste(ornament_rbp_dir, "TE_up_MII_vs_1_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+write.table(MII_1cell_deseq2_down,
+  paste(ornament_rbp_dir, "TE_down_MII_vs_1_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+
+write.table(cell1_2_deseq2[,transcript],
+  paste(ornament_rbp_dir, "TE_background_1_vs_2_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+write.table(cell1_2_deseq2_up,
+  paste(ornament_rbp_dir, "TE_up_1_vs_2_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+write.table(cell1_2_deseq2_down,
+  paste(ornament_rbp_dir, "TE_down_1_vs_2_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+
+write.table(cell2_4_deseq2[,transcript],
+  paste(ornament_rbp_dir, "TE_background_2_vs_4_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+write.table(cell2_4_deseq2_up,
+  paste(ornament_rbp_dir, "TE_up_2_vs_4_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+write.table(cell2_4_deseq2_down,
+  paste(ornament_rbp_dir, "TE_down_2_vs_4_genes.txt", sep="/"),
+  row.names=FALSE, col.names=FALSE, quote=FALSE)
+
+```
+
+Match control genes for oRNAment RBP counting.
+
+```{r RBP motifs in TE DE genesets prep}
+
+# Get oRNAment db RBP encodings
+oRNAment_trx_ids_encoding_dt<- fread(oRNAment_trx_ids_encoding_file, sep=",")
+names(oRNAment_trx_ids_encoding_dt)<- oRNAment_trx_ids_encoding_header
+
+# Get APPRIS mouse v2 region lengths
+mouse_trx_region_bed_dt<- fread(mouse_trx_region_bed_file, sep="\t")
+names(mouse_trx_region_bed_dt)[1]<- "seqname"
+names(mouse_trx_region_bed_dt)[4]<- "Region"
+mouse_trx_region_bed_dt[,log10_length:=log10(V3-V2)]
+mouse_trx_region_len_dt<- mouse_trx_region_bed_dt[,.(seqname, Region, log10_length)]
+mouse_trx_region_len_cast_dt<- dcast(mouse_trx_region_len_dt, seqname~Region, value.var="log10_length")
+# mouse_trx_region_len_cast_dt[,sum(is.na(UTR5))]
+
+# Read in regions sequences and compute GC content
+cds_seqs<- readDNAStringSet(appris_mouse_v2_filtered_regions_cds_fa, format="fasta", use.names=TRUE)
+utr5_seqs<- readDNAStringSet(appris_mouse_v2_filtered_regions_utr5_fa, format="fasta", use.names=TRUE)
+utr3_seqs<- readDNAStringSet(appris_mouse_v2_filtered_regions_utr3_fa, format="fasta", use.names=TRUE)
+kozak_seqs<- readDNAStringSet(appris_mouse_v2_filtered_regions_utr3_fa, format="fasta", use.names=TRUE)
+
+cds_gc_dt<- data.table(seqname=names(cds_seqs), 
+                       CDS_GC=letterFrequency(cds_seqs, letters="GC", as.prob=TRUE)[,1])
+
+utr5_gc_dt<- data.table(seqname=names(utr5_seqs), 
+                        UTR5_GC=letterFrequency(utr5_seqs, letters="GC", as.prob=TRUE)[,1])
+
+utr3_gc_dt<- data.table(seqname=names(utr3_seqs), 
+                        UTR3_GC=letterFrequency(utr3_seqs, letters="GC", as.prob=TRUE)[,1])
+
+# Fix the seqname key as bedtools adds the coordinates during FASTA extraction
+cds_gc_dt[,seqname:=paste0(sapply(base::strsplit(as.character(seqname), "|:", fixed=TRUE), "[", 1), "|")]
+utr5_gc_dt[,seqname:=paste0(sapply(base::strsplit(as.character(seqname), "|:", fixed=TRUE), "[", 1), "|")]
+utr3_gc_dt[,seqname:=paste0(sapply(base::strsplit(as.character(seqname), "|:", fixed=TRUE), "[", 1), "|")]
+
+# Now perform matching to select control transcripts
+setkey(mouse_trx_region_len_cast_dt, seqname)
+setkey(cds_gc_dt, seqname)
+setkey(utr5_gc_dt, seqname)
+setkey(utr3_gc_dt, seqname)
+
+chain_merge_all<- function(x, y){
+  res<- merge(x, y, all=TRUE)
+}
+
+mouse_trx_region_match_dt<- Reduce(chain_merge_all, list(
+  mouse_trx_region_len_cast_dt, cds_gc_dt, utr3_gc_dt, utr5_gc_dt))
+
+mouse_trx_region_match_dt[,Gene:=sapply(base::strsplit(as.character(seqname), "|", fixed=TRUE), "[", 5)]
+
+mouse_trx_region_match_dt[,Transcript_ID:=sapply(base::strsplit(as.character(seqname), "|", fixed=TRUE), "[", 1)]
+
+mouse_trx_region_match_dt[,Transcript_ID_noversion:=sapply(
+  base::strsplit(as.character(Transcript_ID), ".", fixed=TRUE), "[", 1)]
+
+# Annotate the oRNAment identifiers
+mouse_trx_region_match_dt[,ensembl_transcript_id_INT:=oRNAment_trx_ids_encoding_dt[
+  match(mouse_trx_region_match_dt[,Transcript_ID_noversion], Transcript_ID), ensembl_transcript_id_INT]]
+
+mouse_trx_region_match_dt[,ensembl_gene_id_INT:=oRNAment_trx_ids_encoding_dt[
+  match(mouse_trx_region_match_dt[,Transcript_ID_noversion], Transcript_ID), ensembl_gene_id_INT]]
+
+# Get the TE DE genesets
+TE_all_genesets_dt<- lapply(TE_all_genesets, fread, sep="\t", header=FALSE)
+TE_all_genesets_nrows<- sapply(TE_all_genesets_dt, nrow)
+TE_all_genesets_rb_dt<-  rbindlist(TE_all_genesets_dt, fill=TRUE)
+rm(TE_all_genesets_dt)
+
+# The background files had an additional column with all 1s
+names(TE_all_genesets_rb_dt)[1]<- "Gene"
+
+TE_all_genesets_rb_dt[,Geneset:=factor(rep(
+  c(rep(dev_stage_levels[-5], 3)), 
+  times=TE_all_genesets_nrows), levels=dev_stage_levels)]
+
+TE_all_genesets_rb_dt[,TE_direction:=factor(rep(
+  te_direction_levels, times=c(
+    sum(TE_all_genesets_nrows[1:4]), 
+    sum(TE_all_genesets_nrows[5:8]), 
+    sum(TE_all_genesets_nrows[9:12]))),
+  levels=te_direction_levels)]
+
+TE_all_genesets_rb_dt[,Treat:=factor(
+  rep(c(1, 0), times=c(sum(TE_all_genesets_nrows[1:8]), 
+                       sum(TE_all_genesets_nrows[9:12]))))]
+
+# Remove genes from the TE_background set if they are observed in the paired TE dataset
+TE_all_genesets_rb_dt[,Key:=paste(Geneset, Gene, sep=":")]
+TE_all_genesets_rb_up_down_dt<- TE_all_genesets_rb_dt[TE_direction!="TE_background"]
+TE_all_genesets_rb_backg_dt<- TE_all_genesets_rb_dt[TE_direction=="TE_background"]
+TE_all_genesets_rb_backg_filt_dt<- TE_all_genesets_rb_backg_dt[!Key%in%TE_all_genesets_rb_up_down_dt[,unique(Key)]]
+TE_all_genesets_rb_filt_dt<- rbind(TE_all_genesets_rb_up_down_dt, TE_all_genesets_rb_backg_filt_dt)
+rm(list=c("TE_all_genesets_rb_up_down_dt", "TE_all_genesets_rb_backg_dt", "TE_all_genesets_rb_backg_filt_dt"))
+
+# Now merge with the match dt
+TE_all_genesets_rb_merge_dt<- merge(TE_all_genesets_rb_filt_dt, mouse_trx_region_match_dt, by="Gene")
+# dim(TE_all_genesets_rb_filt_dt)
+# dim(TE_all_genesets_rb_merge_dt)
+
+# Determine if any of the tests genes have NA values for the match covariates
+TE_all_genesets_rb_merge_dt[,Is_na:=is.na(UTR5), by=seq_len(nrow(TE_all_genesets_rb_merge_dt))]
+
+#TE_all_genesets_rb_merge_dt[Treat==1, table(Is_na)]
+# So 43 DE genes do not have 5' UTRs; test if this is significant compared to control genes later
+
+# Also determine if there are any of Cenik lab curated APPRIS transcripts that
+# are not found in the oRNAment db
+#TE_all_genesets_rb_merge_dt[,sum(is.na(ensembl_transcript_id_INT))]
+# 572 transcripts altogether were not matched to oRNAment db
+#TE_all_genesets_rb_merge_dt[Treat==1,sum(is.na(ensembl_transcript_id_INT))]
+# This includes 12 transcripts from differential genesets
+# To perform analysis, drop these but make a note of it
+
+appris_absent_in_oRNAment_dt<- TE_all_genesets_rb_merge_dt[Treat==1 & is.na(ensembl_transcript_id_INT)]
+
+appris_absent_in_oRNAment_filt_dt<- appris_absent_in_oRNAment_dt[,
+  .(Gene, Geneset, TE_direction, Transcript_ID, ensembl_transcript_id_INT)]
+
+write.table(appris_absent_in_oRNAment_filt_dt,
+            paste(ornament_rbp_dir, "appris_absent_in_oRNAment.txt", sep="/"), 
+            quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
+
+```
+
+Write control genes for oRNAment RBP counting.
+
+```{r TE genesets oRNAment db filter sets}
+
+# Remove all genes not found in the oRNAment db and any genes that have not 3' UTR, which
+# we want to match on
+TE_all_genesets_rb_merge_filt_dt<- TE_all_genesets_rb_merge_dt[
+  !is.na(ensembl_transcript_id_INT) & !is.na(UTR3), -c("seqname", "Key")]
+
+get_control_dts<- function(dt){
+  
+  set.seed(9)
+  
+  # First define helper func
+  get_match_index<- function(x){
+  vals<- as.integer(x)
+  max_val<- max(vals)
+  return(max_val)
+  }
+  
+  te_directions<- te_direction_levels[1:2]
+  dev_stages<- dev_stage_levels[-5]
+  control_dt<- as.list(rep(NULL, length(te_directions)*length(dev_stages)))
+  
+  counter<- 0
+  for(i in 1:length(dev_stages)){
+    for(j in 1:length(te_directions)){
+      
+      counter<- counter + 1
+      
+      input_dt<- dt[Geneset==dev_stages[i] & TE_direction%in%c(
+        te_directions[j], te_direction_levels[3])]
+      
+      # Because lack of 5' UTRs for some TE genes, only match on CDS, UTR3 features
+      non_de_match<- matchit(
+            formula=Treat ~ CDS_GC + UTR3_GC + CDS + UTR3, data=input_dt, discard="control", ratio=6)
+      
+      # rownames have index for Treat==1 that was matched
+      # columns contain indices of genes for different control genesets
+      non_de_match_mm<- non_de_match$match.matrix
+      
+      non_de_match_indices<- as.data.table(apply(non_de_match_mm, 2, as.integer))
+      
+      get_match_ids<- function(x){
+        match_ids<- non_de_match$model$data[x, ensembl_transcript_id_INT]
+        return(match_ids) 
+      }
+      
+      # Convert from dt index to transcript ID, without version number to enable
+      # matching more transcripts in oRNAment db, which often differ in version
+      non_de_match_ids<- as.data.table(apply(non_de_match_indices, 2, get_match_ids))
+      non_de_match_ids_flat<- unlist(non_de_match_ids)
+      names(non_de_match_ids_flat)<- NULL
+      
+      # Now add back in the Treat==1 genes and write them together for oRNAment db extraction
+      treat_ids<- non_de_match$model$data[
+        as.integer(row.names(non_de_match_mm)), as.character(ensembl_transcript_id_INT)]
+      
+      combined_ids<- list(non_de_match_ids, as.integer(c(non_de_match_ids_flat, treat_ids)))
+      
+      control_dt[[counter]]<- combined_ids
+      names(control_dt)[[counter]]<- paste(dev_stages[i], te_directions[j], sep=".")
+    }
+  }
+  return(control_dt)
+}
+
+TE_all_genesets_rb_merge_filt_cntrl_dts<- get_control_dts(
+  TE_all_genesets_rb_merge_filt_dt)
+
+# Write out the genesets for filtering of oRNAment db
+# Easier to loop than figure out how to curry multiple args to write.table
+for(i in 1:length(TE_all_genesets_rb_merge_filt_cntrl_dts)){
+  write.table(TE_all_genesets_rb_merge_filt_cntrl_dts[[i]][[2]],
+              paste(ornament_rbp_dir, paste0(names(TE_all_genesets_rb_merge_filt_cntrl_dts)[i], ".txt"), sep="/"),
+                    sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+}
+
+```
+
+Use enumerate_rbps_from_oRNAment_db.py to count RBPs. For example, the following will enumerate RBPs in each region for genes with increased TE between MII and GV states:
+
+python3 enumerate_rbps_from_oRNAment_db.py -i GV_vs_MII.TE_up.txt -d Mus_musculus_cDNA_oRNAment.csv.gz -t Mus_musculus_string_to_int_ID_conversion.csv.gz -r RBP_id_encoding.csv -f GV_vs_MII.TE_up.rbp_counts.txt
+
+
+```{r TE genesets oRNAment db analysis}
+
+TE_up_GV_vs_MII_db_file<- paste(mouse_ornament_counts_dir, "GV_vs_MII.TE_up.rbp_counts.txt", sep="/")
+TE_up_MII_vs_1_db_file<- paste(mouse_ornament_counts_dir, "MII_vs_1.TE_up.rbp_counts.txt", sep="/")
+TE_up_1_vs_2_db_file<- paste(mouse_ornament_counts_dir, "1_vs_2.TE_up.rbp_counts.txt", sep="/")
+TE_up_2_vs_4_db_file<- paste(mouse_ornament_counts_dir, "2_vs_4.TE_up.rbp_counts.txt", sep="/")
+TE_down_GV_vs_MII_db_file<- paste(mouse_ornament_counts_dir, "GV_vs_MII.TE_down.rbp_counts.txt", sep="/")
+TE_down_MII_vs_1_db_file<- paste(mouse_ornament_counts_dir, "MII_vs_1.TE_down.rbp_counts.txt", sep="/")
+TE_down_1_vs_2_db_file<- paste(mouse_ornament_counts_dir, "1_vs_2.TE_down.rbp_counts.txt", sep="/")
+TE_down_2_vs_4_db_file<- paste(mouse_ornament_counts_dir, "2_vs_4.TE_down.rbp_counts.txt", sep="/")
+
+TE_all_db_files<- c(TE_up_GV_vs_MII_db_file, TE_up_MII_vs_1_db_file, 
+                    TE_up_1_vs_2_db_file, TE_up_2_vs_4_db_file, 
+                    TE_down_GV_vs_MII_db_file, TE_down_MII_vs_1_db_file,
+                    TE_down_1_vs_2_db_file, TE_down_2_vs_4_db_file)
+
+TE_all_db_list<- lapply(TE_all_db_files, fread, sep="\t", header=TRUE)
+TE_all_db_list_nrows<- sapply(TE_all_db_list, nrow)
+TE_all_db_dt<- rbindlist(TE_all_db_list)
+rm(TE_all_db_list)
+
+TE_all_db_dt[,Geneset:=factor(rep(
+  rep(dev_stage_levels[-5], 2), 
+  times=TE_all_db_list_nrows), levels=dev_stage_levels)]
+
+TE_all_db_dt[,TE_direction:=factor(rep(
+  te_direction_levels[1:2], times=c(
+    sum(TE_all_db_list_nrows[1:4]), 
+    sum(TE_all_db_list_nrows[5:8]))),
+  levels=te_direction_levels)]
+
+# Annotate with the ensembl ID for final geneset annotation
+# Need to make a common key on transcript ID without version
+# TE_all_genesets_rb_merge_filt_cntrl_dts
+TE_all_genesets_rb_merge_filt_cntrl_all_ids<- unlist(sapply(TE_all_genesets_rb_merge_filt_cntrl_dts, "[[", 2))
+
+TE_all_genesets_rb_merge_filt_cntrl_test_only_dt<- TE_all_genesets_rb_merge_filt_dt[ensembl_transcript_id_INT%in%TE_all_genesets_rb_merge_filt_cntrl_all_ids]
+
+TE_all_db_dt[,ensembl_transcript_id_INT:=TE_all_genesets_rb_merge_filt_cntrl_test_only_dt[
+  match(TE_all_db_dt[,Transcript_ID], Transcript_ID_noversion), ensembl_transcript_id_INT]]
+
+TE_all_db_dt[,Key:=paste(Geneset, TE_direction, sep=".")]
+
+# Finally annotate the geneset (control or DE transcript)
+annot_geneset<- function(rbp_counts_dt=TE_all_db_dt, 
+                         cntrl_genesets_list=TE_all_genesets_rb_merge_filt_cntrl_dts){
+  
+  rbp_counts_copy_dt<- copy(rbp_counts_dt)
+  
+  uniq_keys<- rbp_counts_copy_dt[,unique(Key)]
+  for(i in 1:length(uniq_keys)){
+    key<- uniq_keys[i]
+    cntrl_list<- cntrl_genesets_list[names(cntrl_genesets_list)==key]
+    cntrl_dt<- cntrl_list[[1]][[1]]
+    for(j in 1:ncol(cntrl_dt)){
+      rbp_counts_copy_dt[Key==key & ensembl_transcript_id_INT%in%cntrl_dt[[j]], 
+                         RBP_geneset:=paste("Control", j, sep="_")]
+    }
+  }
+  # Once all control rows have been annotated, any remaining rows are for the 
+  # TE geneset
+  rbp_counts_copy_dt[is.na(RBP_geneset), RBP_geneset:="Test"]
+  rbp_counts_copy_dt[,RBP_geneset:=as.factor(RBP_geneset)]
+  return(rbp_counts_copy_dt)
+}
+
+TE_all_db_annot_dt<- annot_geneset()
+
+write.table(TE_all_db_annot_dt, 
+            paste(mouse_ornament_counts_dir, "oRNAment_RBP_counts_global.txt", sep="/"),
+            quote=FALSE, row.names=FALSE)
+
+# Sanity check to make sure we have equal numbers of transcripts in test and each control set
+trx_counts_by_key_geneset_dt<- TE_all_db_annot_dt[,length(unique(Transcript_ID)), by=.(Key, RBP_geneset)]
+# Some genes have no RBP intersections, handle this in testing
+
+# Melt the RBP counts so all counts for each region are in a single column
+TE_all_db_annot_melt_dt<- melt(
+  data=TE_all_db_annot_dt, id.vars=c(
+    "Key", "Geneset", "TE_direction", "Transcript_ID", "ensembl_transcript_id_INT", "RBP_geneset", "RBP"),
+  measure.vars=c("UTR5_counts", "CDS_counts", "UTR3_counts"), variable.name="Region", value.name="N")
+
+TE_all_db_annot_melt_dt[,Region:=as.factor(
+  sapply(base::strsplit(as.character(Region), "_"), "[", 1))]
+
+# Sum the RBP counts for each Geneset, TE_direction, RBP_geneset
+TE_all_db_annot_melt_summ_dt<- TE_all_db_annot_melt_dt[
+  N>0, .N, by=.(Key, Geneset, TE_direction, Region, RBP_geneset, RBP)]
+
+get_ngenes<- function(x){
+  ngenes<- nrow(x[[1]])
+  return(ngenes)
+}
+
+geneset_ngenes<- sapply(TE_all_genesets_rb_merge_filt_cntrl_dts, get_ngenes)
+geneset_names<- names(geneset_ngenes)
+
+# Annotate with the number of genes in the RBP genesets for each Geneset, TE_direction
+TE_all_db_annot_melt_summ_dt[,Total:=geneset_ngenes[
+  match(TE_all_db_annot_melt_summ_dt[,Key], geneset_names)]]
+
+# Now do association tests for each Geneset x TE_direction x Region x RBP
+# between control and test RBP counts compared to all other RBPs
+
+TE_all_db_annot_melt_summ_dt[,Comp_N:=Total-N]
+TE_all_db_annot_melt_summ_dt[,Final_key:=paste(Geneset, TE_direction, Region, RBP, sep=":")]
+
+compute_fisher_test_res<- function(TE_all_db_annot_melt_summ_dt){
+  
+  cntrl_genesets<- TE_all_db_annot_melt_summ_dt[
+    !grepl("Test", RBP_geneset), as.character(unique(RBP_geneset))]
+  
+  cntrl_geneset_length<- length(cntrl_genesets)
+  
+  rbp_keys<- TE_all_db_annot_melt_summ_dt[,as.character(unique(Final_key))]
+  rbp_key_length<- length(rbp_keys)
+  test_count_thresh<- min(geneset_ngenes) * 2  # 16
+  
+  # One row for each RBP key x control geneset, 1 column for OR estimate, 1 column for pvalue
+  TE_all_db_annot_melt_summ_sig_matrix<- matrix(nrow=rbp_key_length*cntrl_geneset_length, ncol=4)
+  
+  counter<- 0
+  for(i in 1:cntrl_geneset_length){
+    
+    cntrl_set<- cntrl_genesets[i]
+    
+    for(j in 1:rbp_key_length){
+      
+      counter<- counter + 1
+      
+      rbp_key<- rbp_keys[j]
+      
+      # Need to handle the ragged nature of the data, as missing data has not been filled
+      # Has RBP
+      rbp_test_counts<- TE_all_db_annot_melt_summ_dt[
+        Final_key==rbp_key & RBP_geneset=="Test", N]
+      
+      if(length(rbp_test_counts)==0){
+        rbp_test_counts<- 0
+      }
+      
+      rbp_cntrl_counts<- TE_all_db_annot_melt_summ_dt[
+        Final_key==rbp_key & RBP_geneset==cntrl_set, N]
+      
+      if(length(rbp_cntrl_counts)==0){
+        rbp_cntrl_counts<- TE_all_db_annot_melt_summ_dt[Key==rbp_key, unique(Total)]
+      }
+      
+      no_rbp_test_counts<- TE_all_db_annot_melt_summ_dt[
+        Final_key==rbp_key & RBP_geneset=="Test", Comp_N]
+      
+      if(length(no_rbp_test_counts)==0){
+        no_rbp_test_counts<- 0
+      }
+      
+      no_rbp_cntrl_counts<- TE_all_db_annot_melt_summ_dt[
+        Final_key==rbp_key & RBP_geneset==cntrl_set, Comp_N]
+      
+      if(length(no_rbp_cntrl_counts)==0){
+        no_rbp_cntrl_counts<- TE_all_db_annot_melt_summ_dt[Key==rbp_key, unique(Total)]
+      }
+      
+      test_mat<- matrix(c(no_rbp_cntrl_counts, rbp_cntrl_counts, no_rbp_test_counts, rbp_test_counts), 
+                        nrow=2, ncol=2)
+      
+      if(sum(test_mat)<test_count_thresh){
+        TE_all_db_annot_melt_summ_sig_matrix[counter,]<- c(rbp_key, cntrl_set, NA, NA)
+        next
+        }
+      
+      test_res<- fisher.test(test_mat)
+      TE_all_db_annot_melt_summ_sig_matrix[counter, 1]<- rbp_key
+      TE_all_db_annot_melt_summ_sig_matrix[counter, 2]<- cntrl_set
+      TE_all_db_annot_melt_summ_sig_matrix[counter, 3]<- as.numeric(test_res$estimate)
+      TE_all_db_annot_melt_summ_sig_matrix[counter, 4]<- as.numeric(test_res$p.value)
+    }
+  }
+  dt<- as.data.table(TE_all_db_annot_melt_summ_sig_matrix)
+  names(dt)<- c("Final_key", "RBP_geneset", "Fisher_OR_est", "Fisher_pvalue")
+  return(dt)
+}
+
+TE_all_db_annot_melt_summ_res_fisher_dt<- compute_fisher_test_res(TE_all_db_annot_melt_summ_dt)
+
+# Remove tests with too little data
+TE_all_db_annot_melt_summ_res_fisher_filt_dt<- TE_all_db_annot_melt_summ_res_fisher_dt[!is.na(Fisher_OR_est)]
+
+TE_all_db_annot_melt_summ_res_fisher_filt_dt[
+  ,`:=`(Fisher_OR_est=as.numeric(Fisher_OR_est), Fisher_pvalue=as.numeric(Fisher_pvalue))]
+
+# Combine p-values and correct for multiple testing
+TE_all_db_annot_melt_summ_res_fisher_filt_comb_dt<- 
+TE_all_db_annot_melt_summ_res_fisher_filt_dt[
+  ,pvalue_adj:=p.hmp(Fisher_pvalue, L=sum(!is.na(Fisher_pvalue))), by=.(Final_key)]
+
+hmp_thresh<- 0.001
+TE_all_db_annot_melt_summ_res_fisher_filt_comb_sig_dt<- 
+  TE_all_db_annot_melt_summ_res_fisher_filt_comb_dt[pvalue_adj<=hmp_thresh]
+
+TE_all_db_annot_melt_summ_sig_dt<- TE_all_db_annot_melt_summ_dt[
+  Final_key%in%TE_all_db_annot_melt_summ_res_fisher_filt_comb_sig_dt[,Final_key]]
+
+TE_all_db_annot_melt_summ_sig_dt[,RBP_geneset_clean:=as.factor(
+  sapply(strsplit(as.character(RBP_geneset), "_"), "[", 1))]
+
+TE_all_db_annot_melt_summ_sig_dt[,Key:=factor(
+  Key, levels=c("GV_vs_MII.TE_up", "1_vs_2.TE_up", "MII_vs_1.TE_up",
+                "GV_vs_MII.TE_down", "1_vs_2.TE_down"))]
+
+TE_all_db_annot_melt_summ_sig_dt[,Proportion_transcripts:=N/Total]
+
+# Plot RBPs with differential counts in each region
+TE_all_db_annot_melt_summ_sig_gg<- ggplot(
+  data=TE_all_db_annot_melt_summ_sig_dt, 
+  aes(x=reorder(RBP, Proportion_transcripts), y=Proportion_transcripts, 
+      shape=RBP_geneset_clean, col=Region))
+
+TE_all_db_annot_melt_summ_sig_gg+
+  facet_wrap(~Key, scales="free_x")+
+  geom_point(position=position_jitterdodge())+
+  scale_color_startrek()+
+  labs(x="RBP", y="Proportion transcripts
+with >= 1 site", 
+       col="Region", shape="Geneset")+
+  theme_cowplot()+
+  theme(axis.text.x=element_text(angle=90, size=8))
+
+# Now filter RBPs that are not tagged to a specific organism or have low to no expression
+# additionally remove tra2 because the TRA2 mouse gene is already present
+# combine RBP PWMs later in final plotting
+
+# No match
+# CG2950, CG7804, elav, fne, qkr58E1; Rnp4F; Rbp9; Rnp4F; Rox8; sup12; tiar1; unc75
+
+filter_rbps<- c("ENSXETG00000007102", "ENSXETG00000018075", "LmjF352550", "LmjF354130", "tra2", "ENSXETG00000007102", "NAB2CONSTRUCT", "MAL8P140", "Tbg97295210", "hnRNPLL", "sm", "Rnp4F", "TVAG002940")
+
+low_expr_rbps<- c("A1CF", "BOLL", "ELAVL4", "MSI1", "KHDRBS3", "PABPC5", "RBM4B", "TIA1", "EIF4G2", 
+                  "RBFOX3", "BRUNOL6", "RBM23", "SRSF8")
+
+filter_rbps<- c(filter_rbps, low_expr_rbps)
+
+TE_all_db_annot_melt_summ_sig_filt_dt<- TE_all_db_annot_melt_summ_sig_dt[
+  !grepl(paste0(filter_rbps, collapse="|"), RBP)]
+
+# Now finally split the PWM identifier and combine proportions
+# for RBPs with more than one sig PWM (just one- MII_vs_1:TE_up:UTR3:SRSF1)
+# Also caggregate and ollapse names for RBPs with the same consensus
+TE_all_db_annot_melt_summ_sig_filt_dt[,RBP_short:=sapply(strsplit(RBP, " "), "[", 1)]
+
+# This should be renamed as such
+#DAZ3 -> DAZL
+#Fusip1 -> SRSF10
+#SF2 -> SRSF1
+ornament_pwms_all_merge_consensus_dt[RBP_short=="DAZ3", RBP_short:="DAZL"]
+ornament_pwms_all_merge_consensus_dt[RBP_short=="Fusip1", RBP_short:="SRSF10"]
+ornament_pwms_all_merge_consensus_dt[RBP_short=="SF2", RBP_short:="SRSF1"]
+
+# Determine if there are RBPs that have the same consensus
+ornament_pwms_all_merge_consensus_filt_dt<- ornament_pwms_all_merge_consensus_dt[
+  !grepl(paste(filter_rbps, collapse="|"), RBP_short)]
+
+ornament_pwms_all_merge_consensus_counts_dt<- ornament_pwms_all_merge_consensus_filt_dt[
+  ,.(N=length(unique(RBP_short)), RBPs=paste0(unique(RBP_short), collapse=",")), by=.(Consensus)]
+
+ornament_pwms_all_merge_consensus_shared<- 
+  ornament_pwms_all_merge_consensus_counts_dt[N>=2, unique(Consensus)]
+
+# Merge with the prior transcript annotations
+TE_all_db_annot_melt_summ_sig_filt_merge_dt<- merge(
+  TE_all_db_annot_melt_summ_sig_filt_dt, 
+  ornament_pwms_all_merge_consensus_dt[,-c("RBP_short")], by="RBP")
+
+# Annotate the RBPs that share the same consensus
+TE_all_db_annot_melt_summ_sig_filt_merge_dt<- merge(
+  TE_all_db_annot_melt_summ_sig_filt_merge_dt, 
+  ornament_pwms_all_merge_consensus_counts_dt[,-c("N")], 
+  by="Consensus")
+
+# Aggregate and annotate if the RBP has a shared PWM (another RBP has same consensus)
+TE_all_db_annot_melt_summ_sig_filt_merge_dt[,Shared:=FALSE]
+
+TE_all_db_annot_melt_summ_sig_filt_merge_dt[
+  Consensus%in%ornament_pwms_all_merge_consensus_shared, Shared:=TRUE]
+
+TE_all_db_annot_melt_summ_sig_filt_merge_dt[
+  ,Final_key:=paste(Geneset, TE_direction, Region, RBPs, sep=":")]
+
+TE_all_db_annot_melt_summ_sig_filt_merge_dt[
+  ,RBP_key:=paste(Geneset, TE_direction, Region, RBP, sep=":")]
+
+TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt<- TE_all_db_annot_melt_summ_sig_filt_merge_dt[
+  , .(N=median(N), Total=median(Total), Proportion_transcripts=median(Proportion_transcripts)), 
+  by=.(Final_key, Key, Geneset, TE_direction, Region, Consensus, RBPs, RBP_geneset, RBP_geneset_clean)]
+
+TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt[,Region:=factor(Region, levels=c("UTR5", "CDS", "UTR3"))]
+TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt[,Region_int:=as.integer(Region)]
+TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt[,Sortkey:=as.numeric(paste(Region_int, N, sep="."))]
+  
+TE_all_db_annot_melt_summ_sig_filt_merge_agg_gg<- ggplot(
+  data=TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt, 
+  aes(x=reorder(RBPs, Sortkey), y=Proportion_transcripts, 
+      shape=RBP_geneset_clean, col=Region))
+
+TE_all_db_annot_melt_summ_sig_filt_merge_agg_gg+
+  facet_wrap(~Key, scales="free_x")+
+  geom_point(position=position_jitterdodge(jitter.width=0.2))+
+  scale_color_startrek()+
+  labs(x="RBP", y="Proportion transcripts
+with nonzero motifs", 
+       col="Region", shape="Geneset")+
+  theme_cowplot()+
+  theme(axis.text.x=element_text(angle=90, size=7))
+
+
+# Sum RBP motifs for these RBPs across transcripts in each sampled geneset;
+# do this before collapsing PWMs for each RBP and consensus sequences across RBPs
+TE_all_db_annot_melt_dt[,RBP_key:=paste(Geneset, TE_direction, Region, RBP, sep=":")]
+
+TE_all_db_annot_melt_sig_agg_dt<- TE_all_db_annot_melt_dt[
+  RBP_key%in%TE_all_db_annot_melt_summ_sig_filt_merge_dt[,unique(RBP_key)],
+  .(N=sum(N)), by=.(RBP_key, RBP, Key, Geneset, TE_direction, Region, RBP_geneset)]
+
+# Because we are pulling in the motif counts prior to RBP testing, re-annotate
+# the select RBPs prior
+TE_all_db_annot_melt_sig_agg_dt[,RBP_short:=sapply(strsplit(RBP, " "), "[", 1)]
+TE_all_db_annot_melt_sig_agg_dt[RBP_short=="DAZ3", RBP_short:="DAZL"]
+TE_all_db_annot_melt_sig_agg_dt[RBP_short=="Fusip1", RBP_short:="SRSF10"]
+TE_all_db_annot_melt_sig_agg_dt[RBP_short=="SF2", RBP_short:="SRSF1"]
+
+# Use the consensus of the RBP for collapsing the annotation of RBPs
+# sharing the same consensus
+TE_all_db_annot_melt_sig_agg_dt[,Consensus:=ornament_pwms_all_merge_consensus_dt[
+  match(TE_all_db_annot_melt_sig_agg_dt[,RBP], RBP), Consensus]]
+
+TE_all_db_annot_melt_sig_agg_dt[,RBPs:=ornament_pwms_all_merge_consensus_counts_dt[
+  match(TE_all_db_annot_melt_sig_agg_dt[,Consensus], Consensus), RBPs]]
+
+TE_all_db_annot_melt_sig_agg_dt[
+  ,Final_key:=paste(Geneset, TE_direction, Region, RBPs, sep=":")]
+
+TE_all_db_annot_melt_sig_agg_dt[,RBP_geneset_clean:=as.factor(
+  sapply(strsplit(as.character(RBP_geneset), "_"), "[", 1))]
+
+
+# Annotate the adjusted p-values and write the results
+TE_all_db_annot_melt_sig_agg_dt[,pvalue_adj:=TE_all_db_annot_melt_summ_res_fisher_filt_comb_sig_dt[
+  match(TE_all_db_annot_melt_sig_agg_dt[,RBP_key], Final_key), pvalue_adj]]
+
+# Write the significant results as a table
+rbp_extended_table_dt<- unique(TE_all_db_annot_melt_sig_agg_dt[
+  ,.(Geneset, TE_direction, Region, RBP_geneset, RBPs, Consensus, N, pvalue_adj)])
+
+setkey(rbp_extended_table_dt, Geneset, TE_direction, Region, RBPs, RBP_geneset)
+
+write.table(rbp_extended_table_dt,
+            paste(ornament_rbp_dir, "rbp_extended_table.txt", sep="/"), 
+            quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
+
+
+# Finally take the median of RBPs with the same consensus
+TE_all_db_annot_melt_sig_agg_final_dt<- TE_all_db_annot_melt_sig_agg_dt[
+  , .(N=median(N)), by=.(
+    Final_key, Key, Geneset, TE_direction, Region, Consensus, RBPs, RBP_geneset, RBP_geneset_clean)]
+
+TE_all_db_annot_melt_sig_agg_final_dt[,Key:=factor(
+  Key, levels=c("GV_vs_MII.TE_up", "1_vs_2.TE_up", "MII_vs_1.TE_up",
+                "GV_vs_MII.TE_down", "1_vs_2.TE_down"))]
+
+TE_all_db_annot_melt_sig_agg_final_dt[,Region:=factor(Region, levels=c("UTR5", "CDS", "UTR3"))]
+TE_all_db_annot_melt_sig_agg_final_dt[,Region_int:=as.integer(Region)]
+TE_all_db_annot_melt_sig_agg_final_dt[,Sortkey:=as.numeric(paste(Region_int, N, sep="."))]
+
+# RBP motif counts for significant RBPs
+TE_all_db_annot_melt_sig_agg_final_gg<- ggplot(
+  data=TE_all_db_annot_melt_sig_agg_final_dt, 
+  aes(x=reorder(RBPs, Sortkey), y=log2(N), 
+      shape=RBP_geneset_clean, col=Region))
+
+TE_all_db_annot_melt_sig_agg_final_gg+
+  facet_wrap(~Key, scales="free_x")+
+  geom_point(position=position_jitterdodge(jitter.width=0.2))+
+  scale_color_startrek()+
+  scale_y_continuous(breaks=seq(2,12,2))+
+  labs(x="RBP", y="log2 motifs", 
+       col="Region", shape="Geneset")+
+  theme_cowplot()+
+  theme(axis.text.x=element_text(angle=90, size=8))
+
+```
+
