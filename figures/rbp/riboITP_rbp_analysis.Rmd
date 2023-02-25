@@ -1,14 +1,13 @@
 ---
 title: "Ribo-ITP RBP analysis"
 author: "Ian Hoskins"
-date: "12/30/2021"
+date: "02/24/2023"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=FALSE)
 ```
-
 
 ```{r Setup}
 
@@ -19,12 +18,12 @@ library(ggrepel)
 library(viridis)
 library(ggsci)
 library(cowplot)
-library(MatchIt)
-library(harmonicmeanp)
+library(readxl)
 
 # Bioconductor packages
 # BiocManager::install("Biostrings")
 library(Biostrings)
+library(transite)
 
 UTR5_L = "UTR5"
 CDS_L = "CDS"
@@ -123,13 +122,31 @@ mouse_trx_variants_intersect_kozak_names<- c(
 
 riboseq_detailed_snps_file<- paste(kozak_dir, "riboseq_detailed_snps.csv", sep="/")
 rnaseq_detailed_snps_file<- paste(kozak_dir, "rnaseq_detailed_snps.csv", sep="/")
-kozak_canonical_file<- "/Users/ianhoskins/canonical_uORF_scores/Kozak_efficiency/Noderer_Wang_2014_FACS_seq_TIS_efficiency.txt"
+kozak_canonical_file<- "/Users/ianhoskins/Kozak_efficiency/canonical_ORF_scores/Noderer_Wang_2014_FACS_seq_TIS_efficiency.txt"
 kozak_noncanonical_file<- "/Users/ianhoskins/Kozak_efficiency/noncanonical_uORF_scores/gkx1114_supp/nar-01911-h-2017-File009.txt"
 
 ```
 
+```{r Deseq results}
 
-## Search for RBP motifs near SNPs cluster I-IV genes
+GV_MII_deseq2<- fread(paste(deseq_res_dir, "GV_MII_deseq2.csv", sep="/"), sep=",", header=T)
+MII_1cell_deseq2<- fread(paste(deseq_res_dir, "MII_1cell_deseq2.csv", sep="/"), sep=",", header=T)
+cell1_2_deseq2<- fread(paste(deseq_res_dir, "cell1_2_deseq2.csv", sep="/"), sep=",", header=T)
+cell2_4_deseq2<- fread(paste(deseq_res_dir, "cell2_4_deseq2.csv", sep="/"), sep=",", header=T)
+cell4_8_deseq2<- fread(paste(deseq_res_dir, "cell4_8_deseq2.csv", sep="/"), sep=",", header=T)
+deseq_thresh<- 0.01
+
+deseq_all_dt<- rbind(GV_MII_deseq2, MII_1cell_deseq2, cell1_2_deseq2, cell2_4_deseq2, cell4_8_deseq2)
+
+deseq_all_dt[,Stage:=as.factor(rep(c("GV_MII", "MII_1cell", "1cell_2cell", "2cell_4cell", "4cell_8cell"), 
+  times=c(nrow(GV_MII_deseq2), nrow(MII_1cell_deseq2),  nrow(cell1_2_deseq2), nrow(cell2_4_deseq2), nrow(cell4_8_deseq2))))]
+
+# Use NAs for RNA_log2FoldChange to determine which genes are not expressed 
+
+```
+
+
+## Search for SNPs in RBP motifs for cluster I-IV genes
 
 ```{r Ribo-ITP RBP motif search for clusters 1-4 genes}
 
@@ -663,7 +680,7 @@ kozak_noncanonical_dt[`TIS Sequence`==Tmppe_uORF_cand_paternal_kozak]
 
 ## Cluster I-IV SNPs in Kozak region
 
-SNPs were intersected with the -6 to +5 region of the transcript and scored for each allele.
+SNPs are intersected with the -6 to +5 region of the transcript and scored for each allele.
 
 ```{r SNPs intersect with Kozak regions}
 
@@ -885,695 +902,411 @@ cluster_counts_by_region_gg<- ggplot(
 cluster_counts_by_region_gg+
   geom_bar(stat="identity", position="dodge")+
   scale_fill_manual(values=REGION_COLS[1:3])+
-  labs(x="Cluster", y="RBP motifs, MSS == 1", 
+  labs(x="Cluster", y="log2 RBP motifs, MSS == 1", 
        fill="Region")+
   theme_cowplot()
 
 ```
 
 
-## oRNAment RBP motifs enriched in TE genesets
+## RBP motifs enriched in TE genesets
 
-Differential translational effiency (TE) for genes between mouse embryonic developmental stages may be tied to RNA-binding protein regulation. To address this, select control transcripts by nonparametric matching on the lengths and GC content of each differential TE transcript's CDS and 3' UTR. Find differential RBPs by testing association between genesets and RBP sites > 0. 
+Differential translation efficiency (TE) for genes between mouse embryonic developmental stages may be tied to RNA-binding protein regulation. Investigate motifs enriched in differentially expressed genes in each stage and in each region of the transcript. Use Transite kmer TSMA method to find enriched or depleted heptamers and use oRNAment to annotate the RBPs whose consensus matches the heptamer.
 
-First generate lists of the gene names to use for RBP DE analysis.
+```{r Transite setup}
 
-```{r TE genelist prep}
+transite_res_dir<- "~/data_staging/RiboITP_paper/transite"
+cache_dir<- paste(transite_res_dir, "transite_cache", sep="/")
+transite_kmer_res_dir<- "~/data_staging/RiboITP_paper/transite_kmer"
+transite_kmer_motifs_file<- paste(transite_kmer_res_dir, "motifs.rda", sep="/")
+transite_kmer_res_file<- paste(transite_kmer_res_dir, "transite_UTR_hexamer_enrichment.xlsx", sep="/")
 
-GV_MII_deseq2<- fread(paste(deseq_res_dir, "GV_MII_deseq2.csv", sep="/"), sep=",", header=T)
-MII_1cell_deseq2<- fread(paste(deseq_res_dir, "MII_1cell_deseq2.csv", sep="/"), sep=",", header=T)
-cell1_2_deseq2<- fread(paste(deseq_res_dir, "cell1_2_deseq2.csv", sep="/"), sep=",", header=T)
-cell2_4_deseq2<- fread(paste(deseq_res_dir, "cell2_4_deseq2.csv", sep="/"), sep=",", header=T)
-cell4_8_deseq2<- fread(paste(deseq_res_dir, "cell4_8_deseq2.csv", sep="/"), sep=",", header=T)
+# Use stage, TE direction specific thresholds?
+#transite_fdr_thresh<- 0.001
 
-deseq_thresh<- 0.01
-GV_MII_deseq2_up<- GV_MII_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
-GV_MII_deseq2_down<- GV_MII_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+# Get the sequences of foreground and background sets for relevant combinations where we observed
+# hits
+transite_TE_up_GV_vs_MII_UTR5_dir<- paste(transite_res_dir, "TE_up_GV_vs_MII", "UTR5", sep="/")
+transite_TE_up_GV_vs_MII_UTR3_dir<- paste(transite_res_dir, "TE_up_GV_vs_MII", "UTR3", sep="/")
+transite_TE_up_GV_vs_MII_CDS_dir<- paste(transite_res_dir, "TE_up_GV_vs_MII", "CDS", sep="/")
 
-MII_1cell_deseq2_up<- MII_1cell_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
-MII_1cell_deseq2_down<- MII_1cell_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+transite_TE_down_GV_vs_MII_UTR5_dir<- paste(transite_res_dir, "TE_down_GV_vs_MII", "UTR5", sep="/")
+transite_TE_down_GV_vs_MII_UTR3_dir<- paste(transite_res_dir, "TE_down_GV_vs_MII", "UTR3", sep="/")
+transite_TE_down_GV_vs_MII_CDS_dir<- paste(transite_res_dir, "TE_down_GV_vs_MII", "CDS", sep="/")
 
-cell1_2_deseq2_up<- cell1_2_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
-cell1_2_deseq2_down<- cell1_2_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+transite_TE_up_MII_vs_1_UTR5_dir<- paste(transite_res_dir, "TE_up_MII_vs_1", "UTR5", sep="/")
+transite_TE_up_MII_vs_1_UTR3_dir<- paste(transite_res_dir, "TE_up_MII_vs_1", "UTR3", sep="/")
+transite_TE_up_MII_vs_1_CDS_dir<- paste(transite_res_dir, "TE_up_MII_vs_1", "CDS", sep="/")
 
-cell2_4_deseq2_up<- cell2_4_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
-cell2_4_deseq2_down<- cell2_4_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+transite_TE_down_MII_vs_1_UTR5_dir<- paste(transite_res_dir, "TE_down_MII_vs_1", "UTR5", sep="/")
+transite_TE_down_MII_vs_1_UTR3_dir<- paste(transite_res_dir, "TE_down_MII_vs_1", "UTR3", sep="/")
+transite_TE_down_MII_vs_1_CDS_dir<- paste(transite_res_dir, "TE_down_MII_vs_1", "CDS", sep="/")
 
-cell4_8_deseq2_up<- cell4_8_deseq2[TE_padj<0.01 & TE_log2FoldChange>0, transcript]
-cell4_8_deseq2_down<- cell4_8_deseq2[TE_padj<0.01 & TE_log2FoldChange<0, transcript]
+transite_TE_up_1_vs_2_UTR5_dir<- paste(transite_res_dir, "TE_up_1_vs_2", "UTR5", sep="/")
+transite_TE_up_1_vs_2_UTR3_dir<- paste(transite_res_dir, "TE_up_1_vs_2", "UTR3", sep="/")
+transite_TE_up_1_vs_2_CDS_dir<- paste(transite_res_dir, "TE_up_1_vs_2", "CDS", sep="/")
 
-# Write the results
-write.table(GV_MII_deseq2[,transcript],
-  paste(ornament_rbp_dir, "TE_background_GV_vs_MII_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
+transite_TE_down_1_vs_2_UTR5_dir<- paste(transite_res_dir, "TE_down_1_vs_2", "UTR5", sep="/")
+transite_TE_down_1_vs_2_UTR3_dir<- paste(transite_res_dir, "TE_down_1_vs_2", "UTR3", sep="/")
+transite_TE_down_1_vs_2_CDS_dir<- paste(transite_res_dir, "TE_down_1_vs_2", "CDS", sep="/")
 
-write.table(GV_MII_deseq2_up,
-  paste(ornament_rbp_dir, "TE_up_GV_vs_MII_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
+# Get backgrounds
+transite_UTR5_back<- paste(transite_res_dir, "UTR5_background.fa", sep="/")
+transite_CDS_back<- paste(transite_res_dir, "CDS_background.fa", sep="/")
+transite_UTR3_back<- paste(transite_res_dir, "UTR3_background.fa", sep="/")
 
-write.table(GV_MII_deseq2_down,
-  paste(ornament_rbp_dir, "TE_down_GV_vs_MII_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
+transite_UTR5_back_seqs<- readRNAStringSet(transite_UTR5_back, format="fasta", use.names=TRUE)
+transite_CDS_back_seqs<- readRNAStringSet(transite_CDS_back, format="fasta", use.names=TRUE)
+transite_UTR3_back_seqs<- readRNAStringSet(transite_UTR3_back, format="fasta", use.names=TRUE)
 
+transite_CDS_back_seqs_names<- names(transite_CDS_back_seqs)
 
-write.table(MII_1cell_deseq2[,transcript],
-  paste(ornament_rbp_dir, "TE_background_MII_vs_1_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
-
-write.table(MII_1cell_deseq2_up,
-  paste(ornament_rbp_dir, "TE_up_MII_vs_1_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
-
-write.table(MII_1cell_deseq2_down,
-  paste(ornament_rbp_dir, "TE_down_MII_vs_1_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
-
-
-write.table(cell1_2_deseq2[,transcript],
-  paste(ornament_rbp_dir, "TE_background_1_vs_2_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
-
-write.table(cell1_2_deseq2_up,
-  paste(ornament_rbp_dir, "TE_up_1_vs_2_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
-
-write.table(cell1_2_deseq2_down,
-  paste(ornament_rbp_dir, "TE_down_1_vs_2_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
+# Remove sequences that have Ns
+transite_UTR5_back_seqs<- transite_UTR5_back_seqs[!grepl("N", as.character(transite_UTR5_back_seqs))]
+transite_CDS_back_seqs<- transite_CDS_back_seqs[!grepl("N", as.character(transite_CDS_back_seqs))]
+transite_UTR3_back_seqs<- transite_UTR3_back_seqs[!grepl("N", as.character(transite_UTR3_back_seqs))]
 
 
-write.table(cell2_4_deseq2[,transcript],
-  paste(ornament_rbp_dir, "TE_background_2_vs_4_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
+transite_TE_up_GV_vs_MII_UTR5_fore<- paste(transite_TE_up_GV_vs_MII_UTR5_dir, "TE_up_GV_vs_MII_genes.foreground.fa", sep="/")
+transite_TE_up_GV_vs_MII_UTR3_fore<- paste(transite_TE_up_GV_vs_MII_UTR3_dir, "TE_up_GV_vs_MII_genes.foreground.fa", sep="/")
+transite_TE_up_GV_vs_MII_CDS_fore<- paste(transite_TE_up_GV_vs_MII_CDS_dir, "TE_up_GV_vs_MII_genes.foreground.fa", sep="/")
 
-write.table(cell2_4_deseq2_up,
-  paste(ornament_rbp_dir, "TE_up_2_vs_4_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
+transite_TE_down_GV_vs_MII_UTR5_fore<- paste(transite_TE_down_GV_vs_MII_UTR5_dir, "TE_down_GV_vs_MII_genes.foreground.fa", sep="/")
+transite_TE_down_GV_vs_MII_UTR3_fore<- paste(transite_TE_down_GV_vs_MII_UTR3_dir, "TE_down_GV_vs_MII_genes.foreground.fa", sep="/")
+transite_TE_down_GV_vs_MII_CDS_fore<- paste(transite_TE_down_GV_vs_MII_CDS_dir, "TE_down_GV_vs_MII_genes.foreground.fa", sep="/")
 
-write.table(cell2_4_deseq2_down,
-  paste(ornament_rbp_dir, "TE_down_2_vs_4_genes.txt", sep="/"),
-  row.names=FALSE, col.names=FALSE, quote=FALSE)
 
-```
+transite_TE_up_MII_vs_1_UTR5_fore<- paste(transite_TE_up_MII_vs_1_UTR5_dir, "TE_up_MII_vs_1_genes.foreground.fa", sep="/")
+transite_TE_up_MII_vs_1_UTR3_fore<- paste(transite_TE_up_MII_vs_1_UTR3_dir, "TE_up_MII_vs_1_genes.foreground.fa", sep="/")
+transite_TE_up_MII_vs_1_CDS_fore<- paste(transite_TE_up_MII_vs_1_CDS_dir, "TE_up_MII_vs_1_genes.foreground.fa", sep="/")
 
-Match control genes for oRNAment RBP counting.
+transite_TE_down_MII_vs_1_UTR5_fore<- paste(transite_TE_down_MII_vs_1_UTR5_dir, "TE_down_MII_vs_1_genes.foreground.fa", sep="/")
+transite_TE_down_MII_vs_1_UTR3_fore<- paste(transite_TE_down_MII_vs_1_UTR3_dir, "TE_down_MII_vs_1_genes.foreground.fa", sep="/")
+transite_TE_down_MII_vs_1_CDS_fore<- paste(transite_TE_down_MII_vs_1_CDS_dir, "TE_down_MII_vs_1_genes.foreground.fa", sep="/")
 
-```{r RBP motifs in TE DE genesets prep}
 
-# Get oRNAment db RBP encodings
-oRNAment_trx_ids_encoding_dt<- fread(oRNAment_trx_ids_encoding_file, sep=",")
-names(oRNAment_trx_ids_encoding_dt)<- oRNAment_trx_ids_encoding_header
+transite_TE_up_1_vs_2_UTR5_fore<- paste(transite_TE_up_1_vs_2_UTR5_dir, "TE_up_1_vs_2_genes.foreground.fa", sep="/")
+transite_TE_up_1_vs_2_UTR3_fore<- paste(transite_TE_up_1_vs_2_UTR3_dir, "TE_up_1_vs_2_genes.foreground.fa", sep="/")
+transite_TE_up_1_vs_2_CDS_fore<- paste(transite_TE_up_1_vs_2_CDS_dir, "TE_up_1_vs_2_genes.foreground.fa", sep="/")
 
-# Get APPRIS mouse v2 region lengths
-mouse_trx_region_bed_dt<- fread(mouse_trx_region_bed_file, sep="\t")
-names(mouse_trx_region_bed_dt)[1]<- "seqname"
-names(mouse_trx_region_bed_dt)[4]<- "Region"
-mouse_trx_region_bed_dt[,log10_length:=log10(V3-V2)]
-mouse_trx_region_len_dt<- mouse_trx_region_bed_dt[,.(seqname, Region, log10_length)]
-mouse_trx_region_len_cast_dt<- dcast(mouse_trx_region_len_dt, seqname~Region, value.var="log10_length")
-# mouse_trx_region_len_cast_dt[,sum(is.na(UTR5))]
+transite_TE_down_1_vs_2_UTR5_fore<- paste(transite_TE_down_1_vs_2_UTR5_dir, "TE_down_1_vs_2_genes.foreground.fa", sep="/")
+transite_TE_down_1_vs_2_UTR3_fore<- paste(transite_TE_down_1_vs_2_UTR3_dir, "TE_down_1_vs_2_genes.foreground.fa", sep="/")
+transite_TE_down_1_vs_2_CDS_fore<- paste(transite_TE_down_1_vs_2_CDS_dir, "TE_down_1_vs_2_genes.foreground.fa", sep="/")
 
-# Read in regions sequences and compute GC content
-cds_seqs<- readDNAStringSet(appris_mouse_v2_filtered_regions_cds_fa, format="fasta", use.names=TRUE)
-utr5_seqs<- readDNAStringSet(appris_mouse_v2_filtered_regions_utr5_fa, format="fasta", use.names=TRUE)
-utr3_seqs<- readDNAStringSet(appris_mouse_v2_filtered_regions_utr3_fa, format="fasta", use.names=TRUE)
-kozak_seqs<- readDNAStringSet(appris_mouse_v2_filtered_regions_utr3_fa, format="fasta", use.names=TRUE)
 
-cds_gc_dt<- data.table(seqname=names(cds_seqs), 
-                       CDS_GC=letterFrequency(cds_seqs, letters="GC", as.prob=TRUE)[,1])
+transite_TE_up_GV_vs_MII_UTR5_fore_seqs<- readRNAStringSet(transite_TE_up_GV_vs_MII_UTR5_fore, format="fasta", use.names=TRUE)
+transite_TE_up_GV_vs_MII_UTR3_fore_seqs<- readRNAStringSet(transite_TE_up_GV_vs_MII_UTR3_fore, format="fasta", use.names=TRUE)
+transite_TE_up_GV_vs_MII_CDS_fore_seqs<- readRNAStringSet(transite_TE_up_GV_vs_MII_CDS_fore, format="fasta", use.names=TRUE)
 
-utr5_gc_dt<- data.table(seqname=names(utr5_seqs), 
-                        UTR5_GC=letterFrequency(utr5_seqs, letters="GC", as.prob=TRUE)[,1])
+transite_TE_down_GV_vs_MII_UTR5_fore_seqs<- readRNAStringSet(transite_TE_down_GV_vs_MII_UTR5_fore, format="fasta", use.names=TRUE)
+transite_TE_down_GV_vs_MII_UTR3_fore_seqs<- readRNAStringSet(transite_TE_down_GV_vs_MII_UTR3_fore, format="fasta", use.names=TRUE)
+transite_TE_down_GV_vs_MII_CDS_fore_seqs<- readRNAStringSet(transite_TE_down_GV_vs_MII_CDS_fore, format="fasta", use.names=TRUE)
 
-utr3_gc_dt<- data.table(seqname=names(utr3_seqs), 
-                        UTR3_GC=letterFrequency(utr3_seqs, letters="GC", as.prob=TRUE)[,1])
 
-# Fix the seqname key as bedtools adds the coordinates during FASTA extraction
-cds_gc_dt[,seqname:=paste0(sapply(base::strsplit(as.character(seqname), "|:", fixed=TRUE), "[", 1), "|")]
-utr5_gc_dt[,seqname:=paste0(sapply(base::strsplit(as.character(seqname), "|:", fixed=TRUE), "[", 1), "|")]
-utr3_gc_dt[,seqname:=paste0(sapply(base::strsplit(as.character(seqname), "|:", fixed=TRUE), "[", 1), "|")]
+transite_TE_up_MII_vs_1_UTR5_fore_seqs<- readRNAStringSet(transite_TE_up_MII_vs_1_UTR5_fore, format="fasta", use.names=TRUE)
+transite_TE_up_MII_vs_1_UTR3_fore_seqs<- readRNAStringSet(transite_TE_up_MII_vs_1_UTR3_fore, format="fasta", use.names=TRUE)
+transite_TE_up_MII_vs_1_CDS_fore_seqs<- readRNAStringSet(transite_TE_up_MII_vs_1_CDS_fore, format="fasta", use.names=TRUE)
 
-# Now perform matching to select control transcripts
-setkey(mouse_trx_region_len_cast_dt, seqname)
-setkey(cds_gc_dt, seqname)
-setkey(utr5_gc_dt, seqname)
-setkey(utr3_gc_dt, seqname)
+transite_TE_down_MII_vs_1_UTR5_fore_seqs<- readRNAStringSet(transite_TE_down_MII_vs_1_UTR5_fore, format="fasta", use.names=TRUE)
+transite_TE_down_MII_vs_1_UTR3_fore_seqs<- readRNAStringSet(transite_TE_down_MII_vs_1_UTR3_fore, format="fasta", use.names=TRUE)
+transite_TE_down_MII_vs_1_CDS_fore_seqs<- readRNAStringSet(transite_TE_down_MII_vs_1_CDS_fore, format="fasta", use.names=TRUE)
 
-chain_merge_all<- function(x, y){
-  res<- merge(x, y, all=TRUE)
-}
 
-mouse_trx_region_match_dt<- Reduce(chain_merge_all, list(
-  mouse_trx_region_len_cast_dt, cds_gc_dt, utr3_gc_dt, utr5_gc_dt))
+transite_TE_up_1_vs_2_UTR5_fore_seqs<- readRNAStringSet(transite_TE_up_1_vs_2_UTR5_fore, format="fasta", use.names=TRUE)
+transite_TE_up_1_vs_2_UTR3_fore_seqs<- readRNAStringSet(transite_TE_up_1_vs_2_UTR3_fore, format="fasta", use.names=TRUE)
+transite_TE_up_1_vs_2_CDS_fore_seqs<- readRNAStringSet(transite_TE_up_1_vs_2_CDS_fore, format="fasta", use.names=TRUE)
 
-mouse_trx_region_match_dt[,Gene:=sapply(base::strsplit(as.character(seqname), "|", fixed=TRUE), "[", 5)]
-
-mouse_trx_region_match_dt[,Transcript_ID:=sapply(base::strsplit(as.character(seqname), "|", fixed=TRUE), "[", 1)]
-
-mouse_trx_region_match_dt[,Transcript_ID_noversion:=sapply(
-  base::strsplit(as.character(Transcript_ID), ".", fixed=TRUE), "[", 1)]
-
-# Annotate the oRNAment identifiers
-mouse_trx_region_match_dt[,ensembl_transcript_id_INT:=oRNAment_trx_ids_encoding_dt[
-  match(mouse_trx_region_match_dt[,Transcript_ID_noversion], Transcript_ID), ensembl_transcript_id_INT]]
-
-mouse_trx_region_match_dt[,ensembl_gene_id_INT:=oRNAment_trx_ids_encoding_dt[
-  match(mouse_trx_region_match_dt[,Transcript_ID_noversion], Transcript_ID), ensembl_gene_id_INT]]
-
-# Get the TE DE genesets
-TE_all_genesets_dt<- lapply(TE_all_genesets, fread, sep="\t", header=FALSE)
-TE_all_genesets_nrows<- sapply(TE_all_genesets_dt, nrow)
-TE_all_genesets_rb_dt<-  rbindlist(TE_all_genesets_dt, fill=TRUE)
-rm(TE_all_genesets_dt)
-
-# The background files had an additional column with all 1s
-names(TE_all_genesets_rb_dt)[1]<- "Gene"
-
-TE_all_genesets_rb_dt[,Geneset:=factor(rep(
-  c(rep(dev_stage_levels[-5], 3)), 
-  times=TE_all_genesets_nrows), levels=dev_stage_levels)]
-
-TE_all_genesets_rb_dt[,TE_direction:=factor(rep(
-  te_direction_levels, times=c(
-    sum(TE_all_genesets_nrows[1:4]), 
-    sum(TE_all_genesets_nrows[5:8]), 
-    sum(TE_all_genesets_nrows[9:12]))),
-  levels=te_direction_levels)]
-
-TE_all_genesets_rb_dt[,Treat:=factor(
-  rep(c(1, 0), times=c(sum(TE_all_genesets_nrows[1:8]), 
-                       sum(TE_all_genesets_nrows[9:12]))))]
-
-# Remove genes from the TE_background set if they are observed in the paired TE dataset
-TE_all_genesets_rb_dt[,Key:=paste(Geneset, Gene, sep=":")]
-TE_all_genesets_rb_up_down_dt<- TE_all_genesets_rb_dt[TE_direction!="TE_background"]
-TE_all_genesets_rb_backg_dt<- TE_all_genesets_rb_dt[TE_direction=="TE_background"]
-TE_all_genesets_rb_backg_filt_dt<- TE_all_genesets_rb_backg_dt[!Key%in%TE_all_genesets_rb_up_down_dt[,unique(Key)]]
-TE_all_genesets_rb_filt_dt<- rbind(TE_all_genesets_rb_up_down_dt, TE_all_genesets_rb_backg_filt_dt)
-rm(list=c("TE_all_genesets_rb_up_down_dt", "TE_all_genesets_rb_backg_dt", "TE_all_genesets_rb_backg_filt_dt"))
-
-# Now merge with the match dt
-TE_all_genesets_rb_merge_dt<- merge(TE_all_genesets_rb_filt_dt, mouse_trx_region_match_dt, by="Gene")
-# dim(TE_all_genesets_rb_filt_dt)
-# dim(TE_all_genesets_rb_merge_dt)
-
-# Determine if any of the tests genes have NA values for the match covariates
-TE_all_genesets_rb_merge_dt[,Is_na:=is.na(UTR5), by=seq_len(nrow(TE_all_genesets_rb_merge_dt))]
-
-#TE_all_genesets_rb_merge_dt[Treat==1, table(Is_na)]
-# So 43 DE genes do not have 5' UTRs; test if this is significant compared to control genes later
-
-# Also determine if there are any of Cenik lab curated APPRIS transcripts that
-# are not found in the oRNAment db
-#TE_all_genesets_rb_merge_dt[,sum(is.na(ensembl_transcript_id_INT))]
-# 572 transcripts altogether were not matched to oRNAment db
-#TE_all_genesets_rb_merge_dt[Treat==1,sum(is.na(ensembl_transcript_id_INT))]
-# This includes 12 transcripts from differential genesets
-# To perform analysis, drop these but make a note of it
-
-appris_absent_in_oRNAment_dt<- TE_all_genesets_rb_merge_dt[Treat==1 & is.na(ensembl_transcript_id_INT)]
-
-appris_absent_in_oRNAment_filt_dt<- appris_absent_in_oRNAment_dt[,
-  .(Gene, Geneset, TE_direction, Transcript_ID, ensembl_transcript_id_INT)]
-
-write.table(appris_absent_in_oRNAment_filt_dt,
-            paste(ornament_rbp_dir, "appris_absent_in_oRNAment.txt", sep="/"), 
-            quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
+transite_TE_down_1_vs_2_UTR5_fore_seqs<- readRNAStringSet(transite_TE_down_1_vs_2_UTR5_fore, format="fasta", use.names=TRUE)
+transite_TE_down_1_vs_2_UTR3_fore_seqs<- readRNAStringSet(transite_TE_down_1_vs_2_UTR3_fore, format="fasta", use.names=TRUE)
+transite_TE_down_1_vs_2_CDS_fore_seqs<- readRNAStringSet(transite_TE_down_1_vs_2_CDS_fore, format="fasta", use.names=TRUE)
 
 ```
 
-Write control genes for oRNAment RBP counting.
 
-```{r TE genesets oRNAment db filter sets}
+```{r Transite RBP annotation}
 
-# Remove all genes not found in the oRNAment db and any genes that have not 3' UTR, which
-# we want to match on
-TE_all_genesets_rb_merge_filt_dt<- TE_all_genesets_rb_merge_dt[
-  !is.na(ensembl_transcript_id_INT) & !is.na(UTR3), -c("seqname", "Key")]
+load(transite_kmer_motifs_file)
+# RBPMotif classes in each element
 
-get_control_dts<- function(dt){
-  
-  set.seed(9)
-  
-  # First define helper func
-  get_match_index<- function(x){
-  vals<- as.integer(x)
-  max_val<- max(vals)
-  return(max_val)
-  }
-  
-  te_directions<- te_direction_levels[1:2]
-  dev_stages<- dev_stage_levels[-5]
-  control_dt<- as.list(rep(NULL, length(te_directions)*length(dev_stages)))
-  
-  counter<- 0
-  for(i in 1:length(dev_stages)){
-    for(j in 1:length(te_directions)){
-      
-      counter<- counter + 1
-      
-      input_dt<- dt[Geneset==dev_stages[i] & TE_direction%in%c(
-        te_directions[j], te_direction_levels[3])]
-      
-      # Because lack of 5' UTRs for some TE genes, only match on CDS, UTR3 features
-      non_de_match<- matchit(
-            formula=Treat ~ CDS_GC + UTR3_GC + CDS + UTR3, data=input_dt, discard="control", ratio=6)
-      
-      # rownames have index for Treat==1 that was matched
-      # columns contain indices of genes for different control genesets
-      non_de_match_mm<- non_de_match$match.matrix
-      
-      non_de_match_indices<- as.data.table(apply(non_de_match_mm, 2, as.integer))
-      
-      get_match_ids<- function(x){
-        match_ids<- non_de_match$model$data[x, ensembl_transcript_id_INT]
-        return(match_ids) 
-      }
-      
-      # Convert from dt index to transcript ID, without version number to enable
-      # matching more transcripts in oRNAment db, which often differ in version
-      non_de_match_ids<- as.data.table(apply(non_de_match_indices, 2, get_match_ids))
-      non_de_match_ids_flat<- unlist(non_de_match_ids)
-      names(non_de_match_ids_flat)<- NULL
-      
-      # Now add back in the Treat==1 genes and write them together for oRNAment db extraction
-      treat_ids<- non_de_match$model$data[
-        as.integer(row.names(non_de_match_mm)), as.character(ensembl_transcript_id_INT)]
-      
-      combined_ids<- list(non_de_match_ids, as.integer(c(non_de_match_ids_flat, treat_ids)))
-      
-      control_dt[[counter]]<- combined_ids
-      names(control_dt)[[counter]]<- paste(dev_stages[i], te_directions[j], sep=".")
-    }
-  }
-  return(control_dt)
+transite_kmer_heptamers_list<- lapply(motifs, get_heptamers)
+
+get_transite_motifs<- function(x){
+  rbp_names<- get_rbps(x)
+  rbp_collapse<- paste(rbp_names, collapse=",")
+  return(rbp_collapse)
 }
 
-TE_all_genesets_rb_merge_filt_cntrl_dts<- get_control_dts(
-  TE_all_genesets_rb_merge_filt_dt)
+# Get the RBP names associated with k-mers
+names(transite_kmer_heptamers_list)<- sapply(motifs, get_transite_motifs)
 
-# Write out the genesets for filtering of oRNAment db
-# Easier to loop than figure out how to curry multiple args to write.table
-for(i in 1:length(TE_all_genesets_rb_merge_filt_cntrl_dts)){
-  write.table(TE_all_genesets_rb_merge_filt_cntrl_dts[[i]][[2]],
-              paste(ornament_rbp_dir, paste0(names(TE_all_genesets_rb_merge_filt_cntrl_dts)[i], ".txt"), sep="/"),
-                    sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+#' lapply-friendly version of %in%
+#'
+#' @param e_set character vector containing values to search in
+#' @param x character to search
+#' @return logical whether or not the x was found in e_set
+is_in<- function(e_set, x){
+  return(x%in%e_set)
+}
+
+transite_kmer_to_rbps<- function(kmer, transite_kmers_list){
+  match_logical<- sapply(transite_kmers_list, is_in, kmer)
+  rbp_names<- names(transite_kmers_list[match_logical])
+  rbp_names_split<- unlist(strsplit(rbp_names, ","))
+  rbp_names_collapse<- paste(sort(unique(rbp_names_split)), collapse=",")
+  return(rbp_names_collapse)
 }
 
 ```
 
-Use enumerate_rbps_from_oRNAment_db.py to count RBPs. For example, the following will enumerate RBPs in each region for genes with increased TE between MII and GV states:
 
-python3 enumerate_rbps_from_oRNAment_db.py -i GV_vs_MII.TE_up.txt -d Mus_musculus_cDNA_oRNAment.csv.gz -t Mus_musculus_string_to_int_ID_conversion.csv.gz -r RBP_id_encoding.csv -f GV_vs_MII.TE_up.rbp_counts.txt
+```{r Transite heptamers}
+
+transite_heptamers_dir<- paste(transite_res_dir, "heptamers", sep="/")
+
+# Find differential heptamers
+
+# GV vs MII
+transite_TE_up_GV_vs_MII_UTR5_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_up_GV_vs_MII_UTR5_fore_seqs)),
+  background_set=as.character(transite_UTR5_back_seqs), k=7, n_cores=2)
+
+transite_TE_up_GV_vs_MII_UTR3_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_up_GV_vs_MII_UTR3_fore_seqs)),
+  background_set=as.character(transite_UTR3_back_seqs), k=7, n_cores=2)
+
+transite_TE_up_GV_vs_MII_CDS_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_up_GV_vs_MII_CDS_fore_seqs)),
+  background_set=as.character(transite_CDS_back_seqs), k=7, n_cores=2)
+
+transite_TE_down_GV_vs_MII_UTR5_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_down_GV_vs_MII_UTR5_fore_seqs)),
+  background_set=as.character(transite_UTR5_back_seqs), k=7, n_cores=2)
+
+transite_TE_down_GV_vs_MII_UTR3_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_down_GV_vs_MII_UTR3_fore_seqs)),
+  background_set=as.character(transite_UTR3_back_seqs), k=7, n_cores=2)
+
+transite_TE_down_GV_vs_MII_CDS_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_down_GV_vs_MII_CDS_fore_seqs)),
+  background_set=as.character(transite_CDS_back_seqs), k=7, n_cores=2)
 
 
-```{r TE genesets oRNAment db analysis}
+transite_heptamers_GV_vs_MII_dt<- as.data.table(rbind(
+  transite_TE_up_GV_vs_MII_UTR5_heptamer[[1]]$enrichment_df,
+  transite_TE_up_GV_vs_MII_CDS_heptamer[[1]]$enrichment_df,
+  transite_TE_up_GV_vs_MII_UTR3_heptamer[[1]]$enrichment_df,
+  transite_TE_down_GV_vs_MII_UTR5_heptamer[[1]]$enrichment_df,
+  transite_TE_down_GV_vs_MII_CDS_heptamer[[1]]$enrichment_df,
+  transite_TE_down_GV_vs_MII_UTR3_heptamer[[1]]$enrichment_df))
 
-TE_up_GV_vs_MII_db_file<- paste(mouse_ornament_counts_dir, "GV_vs_MII.TE_up.rbp_counts.txt", sep="/")
-TE_up_MII_vs_1_db_file<- paste(mouse_ornament_counts_dir, "MII_vs_1.TE_up.rbp_counts.txt", sep="/")
-TE_up_1_vs_2_db_file<- paste(mouse_ornament_counts_dir, "1_vs_2.TE_up.rbp_counts.txt", sep="/")
-TE_up_2_vs_4_db_file<- paste(mouse_ornament_counts_dir, "2_vs_4.TE_up.rbp_counts.txt", sep="/")
-TE_down_GV_vs_MII_db_file<- paste(mouse_ornament_counts_dir, "GV_vs_MII.TE_down.rbp_counts.txt", sep="/")
-TE_down_MII_vs_1_db_file<- paste(mouse_ornament_counts_dir, "MII_vs_1.TE_down.rbp_counts.txt", sep="/")
-TE_down_1_vs_2_db_file<- paste(mouse_ornament_counts_dir, "1_vs_2.TE_down.rbp_counts.txt", sep="/")
-TE_down_2_vs_4_db_file<- paste(mouse_ornament_counts_dir, "2_vs_4.TE_down.rbp_counts.txt", sep="/")
+transite_heptamers_GV_vs_MII_dt[,Region:=factor(rep(
+  rep(c("UTR5", "CDS", "UTR3"), 2), each=16384), levels=c("UTR5", "CDS", "UTR3"))]
 
-TE_all_db_files<- c(TE_up_GV_vs_MII_db_file, TE_up_MII_vs_1_db_file, 
-                    TE_up_1_vs_2_db_file, TE_up_2_vs_4_db_file, 
-                    TE_down_GV_vs_MII_db_file, TE_down_MII_vs_1_db_file,
-                    TE_down_1_vs_2_db_file, TE_down_2_vs_4_db_file)
+transite_heptamers_GV_vs_MII_dt[,Direction:=factor(rep(
+  rep(c("TE_up", "TE_down"), each=3), each=16384), levels=c("TE_up", "TE_down"))]
 
-TE_all_db_list<- lapply(TE_all_db_files, fread, sep="\t", header=TRUE)
-TE_all_db_list_nrows<- sapply(TE_all_db_list, nrow)
-TE_all_db_dt<- rbindlist(TE_all_db_list)
-rm(TE_all_db_list)
+write.table(transite_heptamers_GV_vs_MII_dt, paste(
+  transite_heptamers_dir, "transite_heptamers_GV_vs_MII.txt", sep="/"), 
+  quote=FALSE, row.names=FALSE, sep="\t")
 
-TE_all_db_dt[,Geneset:=factor(rep(
-  rep(dev_stage_levels[-5], 2), 
-  times=TE_all_db_list_nrows), levels=dev_stage_levels)]
+rm(list=c("transite_TE_up_GV_vs_MII_UTR5_heptamer", "transite_TE_up_GV_vs_MII_UTR3_heptamer", "transite_TE_up_GV_vs_MII_CDS_heptamer", "transite_TE_down_GV_vs_MII_UTR5_heptamer", "transite_TE_down_GV_vs_MII_UTR3_heptamer", "transite_TE_down_GV_vs_MII_CDS_heptamer"))
 
-TE_all_db_dt[,TE_direction:=factor(rep(
-  te_direction_levels[1:2], times=c(
-    sum(TE_all_db_list_nrows[1:4]), 
-    sum(TE_all_db_list_nrows[5:8]))),
-  levels=te_direction_levels)]
 
-# Annotate with the ensembl ID for final geneset annotation
-# Need to make a common key on transcript ID without version
-# TE_all_genesets_rb_merge_filt_cntrl_dts
-TE_all_genesets_rb_merge_filt_cntrl_all_ids<- unlist(sapply(TE_all_genesets_rb_merge_filt_cntrl_dts, "[[", 2))
+# MII vs 1
+transite_TE_up_MII_vs_1_UTR5_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_up_MII_vs_1_UTR5_fore_seqs)),
+  background_set=as.character(transite_UTR5_back_seqs), k=7, n_cores=2)
 
-TE_all_genesets_rb_merge_filt_cntrl_test_only_dt<- TE_all_genesets_rb_merge_filt_dt[ensembl_transcript_id_INT%in%TE_all_genesets_rb_merge_filt_cntrl_all_ids]
+transite_TE_up_MII_vs_1_UTR3_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_up_MII_vs_1_UTR3_fore_seqs)),
+  background_set=as.character(transite_UTR3_back_seqs), k=7, n_cores=2)
 
-TE_all_db_dt[,ensembl_transcript_id_INT:=TE_all_genesets_rb_merge_filt_cntrl_test_only_dt[
-  match(TE_all_db_dt[,Transcript_ID], Transcript_ID_noversion), ensembl_transcript_id_INT]]
+transite_TE_up_MII_vs_1_CDS_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_up_MII_vs_1_CDS_fore_seqs)),
+  background_set=as.character(transite_CDS_back_seqs), k=7, n_cores=2)
 
-TE_all_db_dt[,Key:=paste(Geneset, TE_direction, sep=".")]
+transite_TE_down_MII_vs_1_UTR5_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_down_MII_vs_1_UTR5_fore_seqs)),
+  background_set=as.character(transite_UTR5_back_seqs), k=7, n_cores=2)
 
-# Finally annotate the geneset (control or DE transcript)
-annot_geneset<- function(rbp_counts_dt=TE_all_db_dt, 
-                         cntrl_genesets_list=TE_all_genesets_rb_merge_filt_cntrl_dts){
-  
-  rbp_counts_copy_dt<- copy(rbp_counts_dt)
-  
-  uniq_keys<- rbp_counts_copy_dt[,unique(Key)]
-  for(i in 1:length(uniq_keys)){
-    key<- uniq_keys[i]
-    cntrl_list<- cntrl_genesets_list[names(cntrl_genesets_list)==key]
-    cntrl_dt<- cntrl_list[[1]][[1]]
-    for(j in 1:ncol(cntrl_dt)){
-      rbp_counts_copy_dt[Key==key & ensembl_transcript_id_INT%in%cntrl_dt[[j]], 
-                         RBP_geneset:=paste("Control", j, sep="_")]
-    }
-  }
-  # Once all control rows have been annotated, any remaining rows are for the 
-  # TE geneset
-  rbp_counts_copy_dt[is.na(RBP_geneset), RBP_geneset:="Test"]
-  rbp_counts_copy_dt[,RBP_geneset:=as.factor(RBP_geneset)]
-  return(rbp_counts_copy_dt)
-}
+transite_TE_down_MII_vs_1_UTR3_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_down_MII_vs_1_UTR3_fore_seqs)),
+  background_set=as.character(transite_UTR3_back_seqs), k=7, n_cores=2)
 
-TE_all_db_annot_dt<- annot_geneset()
+transite_TE_down_MII_vs_1_CDS_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_down_MII_vs_1_CDS_fore_seqs)),
+  background_set=as.character(transite_CDS_back_seqs), k=7, n_cores=2)
 
-write.table(TE_all_db_annot_dt, 
-            paste(mouse_ornament_counts_dir, "oRNAment_RBP_counts_global.txt", sep="/"),
-            quote=FALSE, row.names=FALSE)
+transite_heptamers_MII_vs_1_dt<- as.data.table(rbind(
+  transite_TE_up_MII_vs_1_UTR5_heptamer[[1]]$enrichment_df,
+  transite_TE_up_MII_vs_1_CDS_heptamer[[1]]$enrichment_df,
+  transite_TE_up_MII_vs_1_UTR3_heptamer[[1]]$enrichment_df,
+  transite_TE_down_MII_vs_1_UTR5_heptamer[[1]]$enrichment_df,
+  transite_TE_down_MII_vs_1_CDS_heptamer[[1]]$enrichment_df,
+  transite_TE_down_MII_vs_1_UTR3_heptamer[[1]]$enrichment_df))
 
-# Sanity check to make sure we have equal numbers of transcripts in test and each control set
-trx_counts_by_key_geneset_dt<- TE_all_db_annot_dt[,length(unique(Transcript_ID)), by=.(Key, RBP_geneset)]
-# Some genes have no RBP intersections, handle this in testing
+transite_heptamers_MII_vs_1_dt[,Region:=factor(rep(
+  rep(c("UTR5", "CDS", "UTR3"), 2), each=16384), levels=c("UTR5", "CDS", "UTR3"))]
 
-# Melt the RBP counts so all counts for each region are in a single column
-TE_all_db_annot_melt_dt<- melt(
-  data=TE_all_db_annot_dt, id.vars=c(
-    "Key", "Geneset", "TE_direction", "Transcript_ID", "ensembl_transcript_id_INT", "RBP_geneset", "RBP"),
-  measure.vars=c("UTR5_counts", "CDS_counts", "UTR3_counts"), variable.name="Region", value.name="N")
+transite_heptamers_MII_vs_1_dt[,Direction:=factor(rep(
+  rep(c("TE_up", "TE_down"), each=3), each=16384), levels=c("TE_up", "TE_down"))]
 
-TE_all_db_annot_melt_dt[,Region:=as.factor(
-  sapply(base::strsplit(as.character(Region), "_"), "[", 1))]
+write.table(transite_heptamers_MII_vs_1_dt, paste(
+  transite_heptamers_dir, "transite_heptamers_MII_vs_1.txt", sep="/"), 
+  quote=FALSE, row.names=FALSE, sep="\t")
 
-# Sum the RBP counts for each Geneset, TE_direction, RBP_geneset
-TE_all_db_annot_melt_summ_dt<- TE_all_db_annot_melt_dt[
-  N>0, .N, by=.(Key, Geneset, TE_direction, Region, RBP_geneset, RBP)]
+rm(list=c("transite_TE_up_MII_vs_1_UTR5_heptamer", "transite_TE_up_MII_vs_1_UTR3_heptamer", "transite_TE_up_MII_vs_1_CDS_heptamer", "transite_TE_down_MII_vs_1_UTR5_heptamer", "transite_TE_down_MII_vs_1_UTR3_heptamer", "transite_TE_down_MII_vs_1_CDS_heptamer"))
 
-get_ngenes<- function(x){
-  ngenes<- nrow(x[[1]])
-  return(ngenes)
-}
 
-geneset_ngenes<- sapply(TE_all_genesets_rb_merge_filt_cntrl_dts, get_ngenes)
-geneset_names<- names(geneset_ngenes)
+# 1 vs 2
+transite_TE_up_1_vs_2_UTR5_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_up_1_vs_2_UTR5_fore_seqs)),
+  background_set=as.character(transite_UTR5_back_seqs), k=7, n_cores=2)
 
-# Annotate with the number of genes in the RBP genesets for each Geneset, TE_direction
-TE_all_db_annot_melt_summ_dt[,Total:=geneset_ngenes[
-  match(TE_all_db_annot_melt_summ_dt[,Key], geneset_names)]]
+transite_TE_up_1_vs_2_UTR3_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_up_1_vs_2_UTR3_fore_seqs)),
+  background_set=as.character(transite_UTR3_back_seqs), k=7, n_cores=2)
 
-# Now do association tests for each Geneset x TE_direction x Region x RBP
-# between control and test RBP counts compared to all other RBPs
+transite_TE_up_1_vs_2_CDS_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_up_1_vs_2_CDS_fore_seqs)),
+  background_set=as.character(transite_CDS_back_seqs), k=7, n_cores=2)
 
-TE_all_db_annot_melt_summ_dt[,Comp_N:=Total-N]
-TE_all_db_annot_melt_summ_dt[,Final_key:=paste(Geneset, TE_direction, Region, RBP, sep=":")]
+transite_TE_down_1_vs_2_UTR5_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_down_1_vs_2_UTR5_fore_seqs)),
+  background_set=as.character(transite_UTR5_back_seqs), k=7, n_cores=2)
 
-compute_fisher_test_res<- function(TE_all_db_annot_melt_summ_dt){
-  
-  cntrl_genesets<- TE_all_db_annot_melt_summ_dt[
-    !grepl("Test", RBP_geneset), as.character(unique(RBP_geneset))]
-  
-  cntrl_geneset_length<- length(cntrl_genesets)
-  
-  rbp_keys<- TE_all_db_annot_melt_summ_dt[,as.character(unique(Final_key))]
-  rbp_key_length<- length(rbp_keys)
-  test_count_thresh<- min(geneset_ngenes) * 2  # 16
-  
-  # One row for each RBP key x control geneset, 1 column for OR estimate, 1 column for pvalue
-  TE_all_db_annot_melt_summ_sig_matrix<- matrix(nrow=rbp_key_length*cntrl_geneset_length, ncol=4)
-  
-  counter<- 0
-  for(i in 1:cntrl_geneset_length){
-    
-    cntrl_set<- cntrl_genesets[i]
-    
-    for(j in 1:rbp_key_length){
-      
-      counter<- counter + 1
-      
-      rbp_key<- rbp_keys[j]
-      
-      # Need to handle the ragged nature of the data, as missing data has not been filled
-      # Has RBP
-      rbp_test_counts<- TE_all_db_annot_melt_summ_dt[
-        Final_key==rbp_key & RBP_geneset=="Test", N]
-      
-      if(length(rbp_test_counts)==0){
-        rbp_test_counts<- 0
-      }
-      
-      rbp_cntrl_counts<- TE_all_db_annot_melt_summ_dt[
-        Final_key==rbp_key & RBP_geneset==cntrl_set, N]
-      
-      if(length(rbp_cntrl_counts)==0){
-        rbp_cntrl_counts<- TE_all_db_annot_melt_summ_dt[Key==rbp_key, unique(Total)]
-      }
-      
-      no_rbp_test_counts<- TE_all_db_annot_melt_summ_dt[
-        Final_key==rbp_key & RBP_geneset=="Test", Comp_N]
-      
-      if(length(no_rbp_test_counts)==0){
-        no_rbp_test_counts<- 0
-      }
-      
-      no_rbp_cntrl_counts<- TE_all_db_annot_melt_summ_dt[
-        Final_key==rbp_key & RBP_geneset==cntrl_set, Comp_N]
-      
-      if(length(no_rbp_cntrl_counts)==0){
-        no_rbp_cntrl_counts<- TE_all_db_annot_melt_summ_dt[Key==rbp_key, unique(Total)]
-      }
-      
-      test_mat<- matrix(c(no_rbp_cntrl_counts, rbp_cntrl_counts, no_rbp_test_counts, rbp_test_counts), 
-                        nrow=2, ncol=2)
-      
-      if(sum(test_mat)<test_count_thresh){
-        TE_all_db_annot_melt_summ_sig_matrix[counter,]<- c(rbp_key, cntrl_set, NA, NA)
-        next
-        }
-      
-      test_res<- fisher.test(test_mat)
-      TE_all_db_annot_melt_summ_sig_matrix[counter, 1]<- rbp_key
-      TE_all_db_annot_melt_summ_sig_matrix[counter, 2]<- cntrl_set
-      TE_all_db_annot_melt_summ_sig_matrix[counter, 3]<- as.numeric(test_res$estimate)
-      TE_all_db_annot_melt_summ_sig_matrix[counter, 4]<- as.numeric(test_res$p.value)
-    }
-  }
-  dt<- as.data.table(TE_all_db_annot_melt_summ_sig_matrix)
-  names(dt)<- c("Final_key", "RBP_geneset", "Fisher_OR_est", "Fisher_pvalue")
-  return(dt)
-}
+transite_TE_down_1_vs_2_UTR3_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_down_1_vs_2_UTR3_fore_seqs)),
+  background_set=as.character(transite_UTR3_back_seqs), k=7, n_cores=2)
 
-TE_all_db_annot_melt_summ_res_fisher_dt<- compute_fisher_test_res(TE_all_db_annot_melt_summ_dt)
+transite_TE_down_1_vs_2_CDS_heptamer<- run_kmer_tsma(
+  foreground_sets=list(as.character(transite_TE_down_1_vs_2_CDS_fore_seqs)),
+  background_set=as.character(transite_CDS_back_seqs), k=7, n_cores=2)
 
-# Remove tests with too little data
-TE_all_db_annot_melt_summ_res_fisher_filt_dt<- TE_all_db_annot_melt_summ_res_fisher_dt[!is.na(Fisher_OR_est)]
 
-TE_all_db_annot_melt_summ_res_fisher_filt_dt[
-  ,`:=`(Fisher_OR_est=as.numeric(Fisher_OR_est), Fisher_pvalue=as.numeric(Fisher_pvalue))]
+transite_heptamers_1_vs_2_dt<- as.data.table(rbind(
+  transite_TE_up_1_vs_2_UTR5_heptamer[[1]]$enrichment_df,
+  transite_TE_up_1_vs_2_CDS_heptamer[[1]]$enrichment_df,
+  transite_TE_up_1_vs_2_UTR3_heptamer[[1]]$enrichment_df,
+  transite_TE_down_1_vs_2_UTR5_heptamer[[1]]$enrichment_df,
+  transite_TE_down_1_vs_2_CDS_heptamer[[1]]$enrichment_df,
+  transite_TE_down_1_vs_2_UTR3_heptamer[[1]]$enrichment_df))
 
-# Combine p-values and correct for multiple testing
-TE_all_db_annot_melt_summ_res_fisher_filt_comb_dt<- 
-TE_all_db_annot_melt_summ_res_fisher_filt_dt[
-  ,pvalue_adj:=p.hmp(Fisher_pvalue, L=sum(!is.na(Fisher_pvalue))), by=.(Final_key)]
+transite_heptamers_1_vs_2_dt[,Region:=factor(rep(
+  rep(c("UTR5", "CDS", "UTR3"), 2), each=16384), levels=c("UTR5", "CDS", "UTR3"))]
 
-hmp_thresh<- 0.001
-TE_all_db_annot_melt_summ_res_fisher_filt_comb_sig_dt<- 
-  TE_all_db_annot_melt_summ_res_fisher_filt_comb_dt[pvalue_adj<=hmp_thresh]
+transite_heptamers_1_vs_2_dt[,Direction:=factor(rep(
+  rep(c("TE_up", "TE_down"), each=3), each=16384), levels=c("TE_up", "TE_down"))]
 
-TE_all_db_annot_melt_summ_sig_dt<- TE_all_db_annot_melt_summ_dt[
-  Final_key%in%TE_all_db_annot_melt_summ_res_fisher_filt_comb_sig_dt[,Final_key]]
+write.table(transite_heptamers_1_vs_2_dt, paste(
+  transite_heptamers_dir, "transite_heptamers_1_vs_2.txt", sep="/"), 
+  quote=FALSE, row.names=FALSE, sep="\t")
 
-TE_all_db_annot_melt_summ_sig_dt[,RBP_geneset_clean:=as.factor(
-  sapply(strsplit(as.character(RBP_geneset), "_"), "[", 1))]
+rm(list=c("transite_TE_up_1_vs_2_UTR5_heptamer", "transite_TE_up_1_vs_2_UTR3_heptamer", "transite_TE_up_1_vs_2_CDS_heptamer", "transite_TE_down_1_vs_2_UTR5_heptamer", "transite_TE_down_1_vs_2_UTR3_heptamer", "transite_TE_down_1_vs_2_CDS_heptamer"))
 
-TE_all_db_annot_melt_summ_sig_dt[,Key:=factor(
-  Key, levels=c("GV_vs_MII.TE_up", "1_vs_2.TE_up", "MII_vs_1.TE_up",
-                "GV_vs_MII.TE_down", "1_vs_2.TE_down"))]
+transite_heptamers_all_dt<- rbind(
+  transite_heptamers_GV_vs_MII_dt,
+  transite_heptamers_MII_vs_1_dt,
+  transite_heptamers_1_vs_2_dt)
 
-TE_all_db_annot_melt_summ_sig_dt[,Proportion_transcripts:=N/Total]
+transite_heptamers_all_dt[,Stage:=factor(rep(
+  c("GV_vs_MII", "MII_vs_1cell", "1cell_vs_2cell"), 
+  each=nrow(transite_heptamers_GV_vs_MII_dt)), 
+  levels=c("GV_vs_MII", "MII_vs_1cell", "1cell_vs_2cell"))]
 
-# Plot RBPs with differential counts in each region
-TE_all_db_annot_melt_summ_sig_gg<- ggplot(
-  data=TE_all_db_annot_melt_summ_sig_dt, 
-  aes(x=reorder(RBP, Proportion_transcripts), y=Proportion_transcripts, 
-      shape=RBP_geneset_clean, col=Region))
+transite_heptamers_all_dt[,Consensus:=kmer]
 
-TE_all_db_annot_melt_summ_sig_gg+
-  facet_wrap(~Key, scales="free_x")+
-  geom_point(position=position_jitterdodge())+
-  scale_color_startrek()+
-  labs(x="RBP", y="Proportion transcripts
-with >= 1 site", 
-       col="Region", shape="Geneset")+
-  theme_cowplot()+
-  theme(axis.text.x=element_text(angle=90, size=8))
-
-# Now filter RBPs that are not tagged to a specific organism or have low to no expression
-# additionally remove tra2 because the TRA2 mouse gene is already present
-# combine RBP PWMs later in final plotting
-
-# No match
-# CG2950, CG7804, elav, fne, qkr58E1; Rnp4F; Rbp9; Rnp4F; Rox8; sup12; tiar1; unc75
-
-filter_rbps<- c("ENSXETG00000007102", "ENSXETG00000018075", "LmjF352550", "LmjF354130", "tra2", "ENSXETG00000007102", "NAB2CONSTRUCT", "MAL8P140", "Tbg97295210", "hnRNPLL", "sm", "Rnp4F", "TVAG002940")
-
-low_expr_rbps<- c("A1CF", "BOLL", "ELAVL4", "MSI1", "KHDRBS3", "PABPC5", "RBM4B", "TIA1", "EIF4G2", 
-                  "RBFOX3", "BRUNOL6", "RBM23", "SRSF8")
-
-filter_rbps<- c(filter_rbps, low_expr_rbps)
-
-TE_all_db_annot_melt_summ_sig_filt_dt<- TE_all_db_annot_melt_summ_sig_dt[
-  !grepl(paste0(filter_rbps, collapse="|"), RBP)]
-
-# Now finally split the PWM identifier and combine proportions
-# for RBPs with more than one sig PWM (just one- MII_vs_1:TE_up:UTR3:SRSF1)
-# Also caggregate and ollapse names for RBPs with the same consensus
-TE_all_db_annot_melt_summ_sig_filt_dt[,RBP_short:=sapply(strsplit(RBP, " "), "[", 1)]
-
-# This should be renamed as such
-#DAZ3 -> DAZL
-#Fusip1 -> SRSF10
-#SF2 -> SRSF1
-ornament_pwms_all_merge_consensus_dt[RBP_short=="DAZ3", RBP_short:="DAZL"]
-ornament_pwms_all_merge_consensus_dt[RBP_short=="Fusip1", RBP_short:="SRSF10"]
-ornament_pwms_all_merge_consensus_dt[RBP_short=="SF2", RBP_short:="SRSF1"]
-
-# Determine if there are RBPs that have the same consensus
-ornament_pwms_all_merge_consensus_filt_dt<- ornament_pwms_all_merge_consensus_dt[
-  !grepl(paste(filter_rbps, collapse="|"), RBP_short)]
-
-ornament_pwms_all_merge_consensus_counts_dt<- ornament_pwms_all_merge_consensus_filt_dt[
-  ,.(N=length(unique(RBP_short)), RBPs=paste0(unique(RBP_short), collapse=",")), by=.(Consensus)]
-
-ornament_pwms_all_merge_consensus_shared<- 
-  ornament_pwms_all_merge_consensus_counts_dt[N>=2, unique(Consensus)]
-
-# Merge with the prior transcript annotations
-TE_all_db_annot_melt_summ_sig_filt_merge_dt<- merge(
-  TE_all_db_annot_melt_summ_sig_filt_dt, 
-  ornament_pwms_all_merge_consensus_dt[,-c("RBP_short")], by="RBP")
-
-# Annotate the RBPs that share the same consensus
-TE_all_db_annot_melt_summ_sig_filt_merge_dt<- merge(
-  TE_all_db_annot_melt_summ_sig_filt_merge_dt, 
-  ornament_pwms_all_merge_consensus_counts_dt[,-c("N")], 
+# Combine with oRNAment db annotations
+transite_heptamers_all_merge_dt<- merge(
+  transite_heptamers_all_dt, 
+  ornament_pwms_all_merge_consensus_key_dt[,.(Consensus, Key)],
   by="Consensus")
 
-# Aggregate and annotate if the RBP has a shared PWM (another RBP has same consensus)
-TE_all_db_annot_melt_summ_sig_filt_merge_dt[,Shared:=FALSE]
+transite_heptamers_all_merge_total_dt<- merge(
+  transite_heptamers_all_dt, 
+  ornament_pwms_all_merge_consensus_key_dt[,.(Consensus, Key)],
+  by="Consensus", all.x=TRUE)
 
-TE_all_db_annot_melt_summ_sig_filt_merge_dt[
-  Consensus%in%ornament_pwms_all_merge_consensus_shared, Shared:=TRUE]
+write.table(transite_heptamers_all_merge_total_dt[,-c("kmer")], 
+            paste(transite_heptamers_dir, "transite_heptamers.txt", sep="/"), 
+            quote=FALSE, row.names=FALSE, sep="\t")
 
-TE_all_db_annot_melt_summ_sig_filt_merge_dt[
-  ,Final_key:=paste(Geneset, TE_direction, Region, RBPs, sep=":")]
+rm(transite_heptamers_all_dt)
 
-TE_all_db_annot_melt_summ_sig_filt_merge_dt[
-  ,RBP_key:=paste(Geneset, TE_direction, Region, RBP, sep=":")]
+transite_heptamers_all_merge_sig_dt<- transite_heptamers_all_merge_dt[adj_p_value<0.0001]
+transite_heptamers_all_merge_sig_counts_dt<- transite_heptamers_all_merge_sig_dt[,.N,keyby=.(Stage, Direction)]
 
-TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt<- TE_all_db_annot_melt_summ_sig_filt_merge_dt[
-  , .(N=median(N), Total=median(Total), Proportion_transcripts=median(Proportion_transcripts)), 
-  by=.(Final_key, Key, Geneset, TE_direction, Region, Consensus, RBPs, RBP_geneset, RBP_geneset_clean)]
+transite_heptamers_all_merge_sig_dt[,Key:=as.factor(Key)]
 
-TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt[,Region:=factor(Region, levels=c("UTR5", "CDS", "UTR3"))]
-TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt[,Region_int:=as.integer(Region)]
-TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt[,Sortkey:=as.numeric(paste(Region_int, N, sep="."))]
-  
-TE_all_db_annot_melt_summ_sig_filt_merge_agg_gg<- ggplot(
-  data=TE_all_db_annot_melt_summ_sig_filt_merge_agg_dt, 
-  aes(x=reorder(RBPs, Sortkey), y=Proportion_transcripts, 
-      shape=RBP_geneset_clean, col=Region))
+transite_res_gg<- ggplot(
+  data=transite_heptamers_all_merge_sig_dt,
+  aes(y=Key, x=enrichment, col=Region))
 
-TE_all_db_annot_melt_summ_sig_filt_merge_agg_gg+
-  facet_wrap(~Key, scales="free_x")+
-  geom_point(position=position_jitterdodge(jitter.width=0.2))+
-  scale_color_startrek()+
-  labs(x="RBP", y="Proportion transcripts
-with nonzero motifs", 
-       col="Region", shape="Geneset")+
+transite_res_gg+
+  facet_wrap(Direction~Stage, scales="free_y")+
+  scale_x_continuous(breaks=seq(0,4,1))+
+  coord_cartesian(xlim=c(0,4.2))+
+  geom_vline(xintercept=1, col="grey", linetype=2)+
+  geom_point(size=1.2)+
+  labs(x="RBPs", y="Motif enrichment")+
   theme_cowplot()+
-  theme(axis.text.x=element_text(angle=90, size=7))
+  theme(axis.text.y=element_text(size=6, angle=30))
 
 
-# Sum RBP motifs for these RBPs across transcripts in each sampled geneset;
-# do this before collapsing PWMs for each RBP and consensus sequences across RBPs
-TE_all_db_annot_melt_dt[,RBP_key:=paste(Geneset, TE_direction, Region, RBP, sep=":")]
+transite_res_te_up_mii_vs_1cell_gg<- ggplot(
+  data=transite_heptamers_all_merge_sig_dt[Direction=="TE_up" & Stage=="MII_vs_1cell"],
+  aes(x=reorder(Key, enrichment), y=enrichment, col=Region))
 
-TE_all_db_annot_melt_sig_agg_dt<- TE_all_db_annot_melt_dt[
-  RBP_key%in%TE_all_db_annot_melt_summ_sig_filt_merge_dt[,unique(RBP_key)],
-  .(N=sum(N)), by=.(RBP_key, RBP, Key, Geneset, TE_direction, Region, RBP_geneset)]
-
-# Because we are pulling in the motif counts prior to RBP testing, re-annotate
-# the select RBPs prior
-TE_all_db_annot_melt_sig_agg_dt[,RBP_short:=sapply(strsplit(RBP, " "), "[", 1)]
-TE_all_db_annot_melt_sig_agg_dt[RBP_short=="DAZ3", RBP_short:="DAZL"]
-TE_all_db_annot_melt_sig_agg_dt[RBP_short=="Fusip1", RBP_short:="SRSF10"]
-TE_all_db_annot_melt_sig_agg_dt[RBP_short=="SF2", RBP_short:="SRSF1"]
-
-# Use the consensus of the RBP for collapsing the annotation of RBPs
-# sharing the same consensus
-TE_all_db_annot_melt_sig_agg_dt[,Consensus:=ornament_pwms_all_merge_consensus_dt[
-  match(TE_all_db_annot_melt_sig_agg_dt[,RBP], RBP), Consensus]]
-
-TE_all_db_annot_melt_sig_agg_dt[,RBPs:=ornament_pwms_all_merge_consensus_counts_dt[
-  match(TE_all_db_annot_melt_sig_agg_dt[,Consensus], Consensus), RBPs]]
-
-TE_all_db_annot_melt_sig_agg_dt[
-  ,Final_key:=paste(Geneset, TE_direction, Region, RBPs, sep=":")]
-
-TE_all_db_annot_melt_sig_agg_dt[,RBP_geneset_clean:=as.factor(
-  sapply(strsplit(as.character(RBP_geneset), "_"), "[", 1))]
-
-
-# Annotate the adjusted p-values and write the results
-TE_all_db_annot_melt_sig_agg_dt[,pvalue_adj:=TE_all_db_annot_melt_summ_res_fisher_filt_comb_sig_dt[
-  match(TE_all_db_annot_melt_sig_agg_dt[,RBP_key], Final_key), pvalue_adj]]
-
-# Write the significant results as a table
-rbp_extended_table_dt<- unique(TE_all_db_annot_melt_sig_agg_dt[
-  ,.(Geneset, TE_direction, Region, RBP_geneset, RBPs, Consensus, N, pvalue_adj)])
-
-setkey(rbp_extended_table_dt, Geneset, TE_direction, Region, RBPs, RBP_geneset)
-
-write.table(rbp_extended_table_dt,
-            paste(ornament_rbp_dir, "rbp_extended_table.txt", sep="/"), 
-            quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
-
-
-# Finally take the median of RBPs with the same consensus
-TE_all_db_annot_melt_sig_agg_final_dt<- TE_all_db_annot_melt_sig_agg_dt[
-  , .(N=median(N)), by=.(
-    Final_key, Key, Geneset, TE_direction, Region, Consensus, RBPs, RBP_geneset, RBP_geneset_clean)]
-
-TE_all_db_annot_melt_sig_agg_final_dt[,Key:=factor(
-  Key, levels=c("GV_vs_MII.TE_up", "1_vs_2.TE_up", "MII_vs_1.TE_up",
-                "GV_vs_MII.TE_down", "1_vs_2.TE_down"))]
-
-TE_all_db_annot_melt_sig_agg_final_dt[,Region:=factor(Region, levels=c("UTR5", "CDS", "UTR3"))]
-TE_all_db_annot_melt_sig_agg_final_dt[,Region_int:=as.integer(Region)]
-TE_all_db_annot_melt_sig_agg_final_dt[,Sortkey:=as.numeric(paste(Region_int, N, sep="."))]
-
-# RBP motif counts for significant RBPs
-TE_all_db_annot_melt_sig_agg_final_gg<- ggplot(
-  data=TE_all_db_annot_melt_sig_agg_final_dt, 
-  aes(x=reorder(RBPs, Sortkey), y=log2(N), 
-      shape=RBP_geneset_clean, col=Region))
-
-TE_all_db_annot_melt_sig_agg_final_gg+
-  facet_wrap(~Key, scales="free_x")+
-  geom_point(position=position_jitterdodge(jitter.width=0.2))+
+transite_res_te_up_mii_vs_1cell_gg+
   scale_color_startrek()+
-  scale_y_continuous(breaks=seq(2,12,2))+
-  labs(x="RBP", y="log2 motifs", 
-       col="Region", shape="Geneset")+
+  scale_y_continuous(breaks=seq(0,4,1))+
+  coord_cartesian(ylim=c(0,4.2))+
+  geom_hline(yintercept=1, col="grey", linetype=2)+
+  geom_point(size=2)+
+  labs(x="", y="Motif enrichment")+
   theme_cowplot()+
-  theme(axis.text.x=element_text(angle=90, size=8))
+  theme(axis.text.x=element_text(size=1, angle=90))
+
+
+te_down_1cell_vs_2cell_filt_rbps<- c("ENSXETG00000007102,NAB2CONSTRUCT", "egw109003261", "LmjF352550", 
+                                     "gw121961CONSTRUC", "tra2", "ENSXETG00000018075", "Rnp4F")
+
+
+transite_res_te_down_1cell_vs_2cell_gg<- ggplot(
+  data=transite_heptamers_all_merge_sig_dt[
+    Direction=="TE_down" & Stage=="1cell_vs_2cell" & 
+      !Key%in%te_down_1cell_vs_2cell_filt_rbps & Region=="UTR3"],
+  aes(x=reorder(Key, enrichment), y=enrichment, col=Region))
+
+transite_res_te_down_1cell_vs_2cell_gg+
+  scale_color_manual(values=c("#84BD00FF"))+
+  scale_y_continuous(breaks=seq(0,4,1))+
+  coord_cartesian(ylim=c(0,4.2))+
+  geom_hline(yintercept=1, col="grey", linetype=2)+
+  geom_point(size=2)+
+  labs(x="", y="Motif enrichment")+
+  theme_cowplot()+
+  theme(axis.text.x=element_text(size=1, angle=90))
+
+
+te_up_gv_vs_mii_filt_rbps<- c("ENSXETG00000007102,NAB2CONSTRUCT", "egw109003261", "LmjF352550", 
+                              "gw121961CONSTRUC", "tra2", "ENSXETG00000018075", "Rnp4F")
+
+transite_res_te_up_gv_vs_mii_gg<- ggplot(
+  data=transite_heptamers_all_merge_sig_dt[
+    Direction=="TE_up" & Stage=="GV_vs_MII" & 
+      !Key%in%te_up_gv_vs_mii_filt_rbps],
+  aes(x=reorder(Key, enrichment, min), y=enrichment, col=Region))
+
+transite_res_te_up_gv_vs_mii_gg+
+  scale_color_startrek()+
+  scale_y_continuous(breaks=seq(0,3,1))+
+  coord_cartesian(ylim=c(0,3))+
+  geom_hline(yintercept=1, col="grey", linetype=2)+
+  geom_point(size=2)+
+  labs(x="", y="Motif enrichment")+
+  theme_cowplot()+
+  theme(axis.text.x=element_text(size=2, angle=90))
 
 ```
 
